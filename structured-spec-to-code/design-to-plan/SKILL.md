@@ -11,7 +11,8 @@ Convert a detailed design document into a structured implementation plan. Each s
 
 ## Parameters
 
-- **project_dir** (required): Project directory containing the design and supporting artifacts (e.g., `.agents/planning/{project_name}`)
+- **agents_dir** (optional, default: `.agents`): Base directory for all structured-spec-to-code workflow artifacts
+- **project_dir** (required): Project directory containing the design and supporting artifacts (e.g., `{agents_dir}/planning/{project_name}`)
 - **design_path** (optional, default: `{project_dir}/design/detailed-design.md`): Path to the detailed design document, if not at the conventional location
 - **output_path** (optional, default: `{project_dir}/implementation/plan.md`): Path where the implementation plan will be written
 
@@ -31,7 +32,7 @@ Read and understand the design document and any supporting artifacts.
 - You SHOULD read supporting artifacts in project_dir if available (research notes, requirements in idea-honing.md) to inform the plan
 - You MUST identify all components, interfaces, data models, and workflows described in the design
 - You MUST identify dependencies between components
-- For brownfield projects (indicated by Integration or Migration sections in the design), you SHOULD also review the codebase summary at `.agents/summary/` if available, to understand integration points and sequencing constraints
+- For brownfield projects (indicated by Integration or Migration sections in the design), you SHOULD also review the codebase summary at `{agents_dir}/summary/` if available, to understand integration points and sequencing constraints
 
 ### 2. Create Implementation Plan
 

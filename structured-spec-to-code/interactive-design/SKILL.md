@@ -11,9 +11,10 @@ Transform a rough idea into a detailed design document through interactive requi
 
 ## Parameters
 
+- **agents_dir** (optional, default: `.agents`): Base directory for all structured-spec-to-code workflow artifacts
 - **rough_idea** (required): The initial concept or idea to develop into a detailed design
 - **project_name** (optional): A short, descriptive name for the project. If not provided, will be generated from the rough idea
-- **project_dir** (optional, default: ".agents/planning/{project_name}"): The base directory where all project files will be stored
+- **project_dir** (optional, default: `{agents_dir}/planning/{project_name}`): The base directory where all project files will be stored
 
 **Constraints for parameter acquisition:**
 - You MUST ask for all required parameters upfront in a single prompt rather than one at a time
@@ -44,7 +45,7 @@ Set up a directory structure to organize all artifacts created during the proces
   - {project_dir}/design/ (directory for design documents)
 - You MUST notify the user when the structure has been created
 - You MUST remind the user to keep all project files in context throughout the process
-- If the design targets an existing codebase, you MUST check if a codebase summary exists at `.agents/summary/`:
+- If the design targets an existing codebase, you MUST check if a codebase summary exists at `{agents_dir}/summary/`:
   - If it exists: check `.agents/summary/.last_commit` and use the VCS diff-stat (e.g., changes since that revision) to assess how current it is. If the summary is significantly out of date, suggest the user run the `codebase-summary` workflow to refresh it before proceeding
   - If it does not exist: suggest the user run the `codebase-summary` workflow first, as the design process will benefit from an up-to-date understanding of the codebase
 

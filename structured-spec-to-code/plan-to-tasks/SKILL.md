@@ -11,10 +11,11 @@ Generate structured code task files from an implementation plan. Processes one s
 
 ## Parameters
 
-- **project_dir** (required): Project directory containing the plan and design artifacts (e.g., `.agents/planning/{project_name}`)
+- **agents_dir** (optional, default: `.agents`): Base directory for all structured-spec-to-code workflow artifacts
+- **project_dir** (required): Project directory containing the plan and design artifacts (e.g., `{agents_dir}/planning/{project_name}`)
 - **plan_path** (optional, default: `{project_dir}/implementation/plan.md`): Path to the implementation plan
 - **step_number** (optional): Specific step to process. If not provided, automatically determines the next uncompleted step from the plan's checklist
-- **output_dir** (optional, default: `.agents/tasks/{project_name}`): Directory where code task files will be created. `{project_name}` is inferred from the last path component of project_dir (e.g., `.agents/planning/template-feature` → `template-feature`)
+- **output_dir** (optional, default: `{agents_dir}/tasks/{project_name}`): Directory where code task files will be created. `{project_name}` is inferred from the last path component of project_dir (e.g., `{agents_dir}/planning/template-feature` → `template-feature`)
 
 **Constraints for parameter acquisition:**
 - You MUST ask for all parameters upfront in a single prompt

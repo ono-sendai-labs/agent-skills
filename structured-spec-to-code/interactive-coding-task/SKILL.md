@@ -11,8 +11,9 @@ Create structured code task files through interactive conversation. Suited for s
 
 ## Parameters
 
+- **agents_dir** (optional, default: `.agents`): Base directory for all structured-spec-to-code workflow artifacts
 - **task_description** (required): What needs to be done. Can be a sentence, paragraph, file path containing a description, or a reference to specific code (e.g., "fix the TODO at src/auth.rs:45")
-- **output_dir** (optional, default: `.agents/tasks/{project_name}`): Directory where code task files will be created
+- **output_dir** (optional, default: `{agents_dir}/tasks/{project_name}`): Directory where code task files will be created
 - **project_name** (optional): Project name for organizing tasks. If not provided, generated from the description with a YYYY-MM-DD date prefix
 
 **Constraints for parameter acquisition:**
@@ -29,7 +30,7 @@ Analyze the task description and gather enough context to create a well-structur
 **Constraints:**
 - You MUST identify the core functionality being requested
 - If the description references specific code (files, line numbers, functions), you MUST read that code to understand the context
-- You SHOULD check the codebase summary at `.agents/summary/` if available, to understand the broader system context
+- You SHOULD check the codebase summary at `{agents_dir}/summary/` if available, to understand the broader system context
 - You SHOULD examine how similar functionality is implemented elsewhere in the codebase to identify existing patterns, conventions, and reusable components
 - You MUST extract any technical requirements, constraints, or preferences mentioned
 - You MUST determine the appropriate complexity level (Low/Medium/High)

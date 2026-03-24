@@ -11,9 +11,10 @@ Analyze a codebase and generate structured documentation covering architecture, 
 
 ## Parameters
 
-- **output_dir** (optional, default: ".agents/summary"): Directory where documentation will be stored
+- **agents_dir** (optional, default: `.agents`): Base directory for all structured-spec-to-code workflow artifacts
+- **codebase_summary_dir** (optional, default: `{agents_dir}/summary`): Directory where codebase summary documentation will be stored
 - **codebase_path** (optional, default: current directory): Path to the codebase to analyze
-- **update_mode** (optional, default: true if output_dir already contains a summary, false otherwise): Whether to update existing documentation based on recent changes, or perform a full analysis
+- **update_mode** (optional, default: true if codebase_summary_dir already contains a summary, false otherwise): Whether to update existing documentation based on recent changes, or perform a full analysis
 
 **Constraints for parameter acquisition:**
 - You MUST ask for all parameters upfront in a single prompt rather than one at a time
@@ -30,7 +31,7 @@ Initialize the analysis environment and create necessary directory structure.
 - You MUST create the output_dir if it doesn't exist
 - You MUST inform the user about the directory structure being created
 - If update_mode is true, you MUST:
-  - Check if {output_dir}/.last_commit exists to determine the baseline revision
+  - Check if {codebase_summary_dir}/last_commit exists to determine the baseline revision
   - Use version control history to review commits since the baseline and identify changes
 - If update_mode is false or no previous documentation exists, you MUST inform the user that full analysis will be performed
 
@@ -47,7 +48,7 @@ Perform comprehensive analysis of the codebase to understand its structure, comp
 - You MUST identify key interfaces, APIs, and integration points
 - You MUST analyze code patterns and design principles used throughout the codebase
 - You MUST use Mermaid diagrams for visual representations
-- You MUST document basic codebase information in {output_dir}/codebase_info.md
+- You MUST document basic codebase information in {codebase_summary_dir}/codebase_info.md
 - If update_mode is true, you MUST:
   - Analyze which packages and files were modified in recent commits
   - Prioritize analysis of modified components
@@ -58,7 +59,7 @@ Perform comprehensive analysis of the codebase to understand its structure, comp
 Create comprehensive documentation files for different aspects of the system.
 
 **Constraints:**
-- You MUST create a comprehensive knowledge base index file ({output_dir}/index.md) that:
+- You MUST create a comprehensive knowledge base index file ({codebase_summary_dir}/index.md) that:
   - Provides explicit instructions for AI assistants on how to use the documentation
   - Contains rich metadata about each file's purpose and content
   - Includes a table of contents with descriptive summaries for each document
@@ -67,12 +68,12 @@ Create comprehensive documentation files for different aspects of the system.
   - Contains brief summaries of each file's content to help determine relevance
   - Is designed to be the primary file needed in context for AI assistants to effectively answer questions
 - You MUST create documentation files for different aspects of the system:
-  - {output_dir}/architecture.md (system architecture and design patterns)
-  - {output_dir}/components.md (major components and their responsibilities)
-  - {output_dir}/interfaces.md (APIs, interfaces, and integration points)
-  - {output_dir}/data_models.md (data structures and models)
-  - {output_dir}/workflows.md (key processes and workflows)
-  - {output_dir}/dependencies.md (external dependencies and their usage)
+  - {codebase_summary_dir}/architecture.md (system architecture and design patterns)
+  - {codebase_summary_dir}/components.md (major components and their responsibilities)
+  - {codebase_summary_dir}/interfaces.md (APIs, interfaces, and integration points)
+  - {codebase_summary_dir}/data_models.md (data structures and models)
+  - {codebase_summary_dir}/workflows.md (key processes and workflows)
+  - {codebase_summary_dir}/dependencies.md (external dependencies and their usage)
 - You MUST ensure each documentation file contains relevant information from the codebase analysis
 - If update_mode is true, you MUST:
   - Preserve existing documentation structure where possible
@@ -85,7 +86,7 @@ Review the documentation for consistency and completeness.
 **Constraints:**
 - You MUST check for inconsistencies across documents
 - You MUST identify areas lacking sufficient detail
-- You MUST document any inconsistencies or gaps found in {output_dir}/review_notes.md
+- You MUST document any inconsistencies or gaps found in {codebase_summary_dir}/review_notes.md
 - You SHOULD use insights from the codebase analysis to identify areas needing more detail
 - You MUST provide recommendations for improving documentation quality
 
@@ -94,7 +95,7 @@ Review the documentation for consistency and completeness.
 Provide a summary of the documentation process and suggest next steps.
 
 **Constraints:**
-- You MUST save the current revision identifier (e.g., commit hash) to {output_dir}/.last_commit to enable future update_mode runs
+- You MUST save the current revision identifier (e.g., commit hash) to {codebase_summary_dir}/last_commit to enable future update_mode runs
 - You MUST summarize what has been accomplished
 - You MUST suggest next steps for using the documentation
 - You MUST provide guidance on maintaining and updating the documentation
@@ -112,7 +113,7 @@ Provide a summary of the documentation process and suggest next steps.
 
 ### Example Input
 ```
-output_dir: ".agents/summary"
+codebase_summary_dir: ".agents/summary"
 codebase_path: "/path/to/project"
 ```
 
@@ -165,8 +166,8 @@ Summary:
 
 ### Example Output Structure
 ```
-.agents/summary/
-├── .last_commit (revision identifier for update_mode baseline)
+{codebase_summary_dir}/
+├── last_commit (revision identifier for update_mode baseline)
 ├── index.md (knowledge base index)
 ├── codebase_info.md
 ├── architecture.md

@@ -26,8 +26,10 @@ For brownfield projects, run **codebase-summary** first to give the design phase
 
 ## Directory Conventions
 
+The base directory defaults to `.agents/` and is configurable via the `agents_dir` parameter on each skill.
+
 ```
-.agents/
+{agents_dir}/
 ├── summary/                          # Codebase summary (from codebase-summary)
 ├── planning/{project_name}/          # Design artifacts (from interactive-design)
 │   ├── rough-idea.md

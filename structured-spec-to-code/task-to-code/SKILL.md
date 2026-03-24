@@ -11,10 +11,11 @@ Autonomously implement a code task using TDD principles: Explore the codebase an
 
 ## Parameters
 
+- **agents_dir** (optional, default: `.agents`): Base directory for all structured-spec-to-code workflow artifacts
 - **task** (required): Path to a `.code-task.md` file, or a direct task description. If a file, its Reference Documentation section (if present) points to design and research documents that MUST be read
-- **scratchpad_dir** (optional): Base directory for working documents (context, plan, progress). The scratchpad for a task is created by mirroring the task file's directory structure relative to the tasks directory. For example:
-  - Task at `.agents/tasks/template-feature/step02/task-01-create-data-models.code-task.md` → scratchpad at `.agents/scratchpad/template-feature/step02/task-01-create-data-models/`
-  - Task at `.agents/tasks/2026-03-23-auth-rate-limit/task-01-add-login-rate-limiting.code-task.md` → scratchpad at `.agents/scratchpad/2026-03-23-auth-rate-limit/task-01-add-login-rate-limiting/`
+- **scratchpad_dir** (optional): Base directory for working documents (context, plan, progress). Defaults to `{agents_dir}/scratchpad/`. The scratchpad for a task is created by mirroring the task file's directory structure relative to the tasks directory. For example:
+  - Task at `{agents_dir}/tasks/template-feature/step02/task-01-create-data-models.code-task.md` → scratchpad at `{agents_dir}/scratchpad/template-feature/step02/task-01-create-data-models/`
+  - Task at `{agents_dir}/tasks/2026-03-23-auth-rate-limit/task-01-add-login-rate-limiting.code-task.md` → scratchpad at `{agents_dir}/scratchpad/2026-03-23-auth-rate-limit/task-01-add-login-rate-limiting/`
   - If task is provided as text (no file), generate a subdirectory name from the current date and a short slug inferred from the description
 
 **Constraints for parameter acquisition:**
@@ -60,7 +61,7 @@ Analyze requirements and research existing patterns in the codebase.
 - You MUST update context.md with requirements, patterns, dependencies, and implementation paths
 - If you discover inconsistencies between the task and the actual codebase, you MUST escalate to the user
 - You SHOULD identify similar implementations in the codebase to follow established patterns
-- You SHOULD consult the codebase summary at `.agents/summary/` if available, to understand broader system context — especially useful for tasks without a design document
+- You SHOULD consult the codebase summary at `{agents_dir}/summary/` if available, to understand broader system context — especially useful for tasks without a design document
 
 ### 3. Plan
 
@@ -133,7 +134,7 @@ Create a conventional commit for the completed implementation.
 - You MUST NOT push to remote repositories
 - You MUST document the commit revision identifier in progress.md
 - You MUST verify all checklist items are marked complete before committing
-- After committing, if the task originates from a plan (i.e., it lives under a `step{NN}/` directory within `.agents/tasks/`), you MUST check whether all tasks in that step directory are now complete (all have a corresponding commit documented in their scratchpad's progress.md). If so, you MUST mark the corresponding checklist item in the implementation plan as complete (change `- [ ]` to `- [x]`)
+- After committing, if the task originates from a plan (i.e., it lives under a `step{NN}/` directory within `{agents_dir}/tasks/`), you MUST check whether all tasks in that step directory are now complete (all have a corresponding commit documented in their scratchpad's progress.md). If so, you MUST mark the corresponding checklist item in the implementation plan as complete (change `- [ ]` to `- [x]`)
 
 ## Examples
 
