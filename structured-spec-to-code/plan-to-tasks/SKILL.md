@@ -1,126 +1,87 @@
 ---
 name: plan-to-tasks
-description: This workflow generates structured code task files from rough descriptions, ideas, or PDD implementation plans. It automatically detects the input type and creates properly formatted code task files. For PDD plans, it processes implementation steps one at a time to allow for learning and adaptation between steps.
+description: Generate structured code task files from an implementation plan. Processes one plan step at a time, breaking it into logical code tasks with acceptance criteria. Use when the user has an implementation plan (from design-to-plan or similar) and wants to generate code task files for the next step.
 ---
 
-# Code Task Generator
+# Plan to Tasks
 
 ## Overview
 
-This workflow generates structured code task files from rough descriptions, ideas, or PDD implementation plans. It automatically detects the input type and creates properly formatted code task files. For PDD plans, it processes implementation steps one at a time to allow for learning and adaptation between steps.
+Generate structured code task files from an implementation plan. Processes one step at a time, breaking it into logical sub-tasks with acceptance criteria, reference documentation, and implementation guidance. Each code task is a self-contained specification that can be handed to the `task-to-code` workflow.
 
 ## Parameters
 
-- **input** (required): Task description, file path, or PDD plan path. Can be a simple sentence, paragraph, detailed explanation, or path to a PDD implementation plan.
-- **step_number** (optional): For PDD plans only - specific step to process. If not provided, automatically determines the next uncompleted step from the checklist.
-- **output_dir** (optional, default: ".agents/tasks/{project_name}"): Directory where the code task file will be created
-- **project_name** (optional): Project name for organizing tasks. If processing a PDD plan, will be inferred from the plan path. Otherwise, will be generated from the description with a YYYY-MM-DD date prefix.
+- **project_dir** (required): Project directory containing the plan and design artifacts (e.g., `.agents/planning/{project_name}`)
+- **plan_path** (optional, default: `{project_dir}/implementation/plan.md`): Path to the implementation plan
+- **step_number** (optional): Specific step to process. If not provided, automatically determines the next uncompleted step from the plan's checklist
+- **output_dir** (optional, default: `.agents/tasks/{project_name}`): Directory where code task files will be created. `{project_name}` is inferred from the last path component of project_dir (e.g., `.agents/planning/template-feature` → `template-feature`)
 
 **Constraints for parameter acquisition:**
-- You MUST ask for all required parameters upfront in a single prompt rather than one at a time
-- You MUST support multiple input methods for input including:
-  - Direct text input
-  - File path containing the description or PDD plan
-  - Directory path (will look for plan.md within it)
-  - URL to internal documentation
+- You MUST ask for all parameters upfront in a single prompt
+- You MUST validate that the plan file exists and is readable
 - You MUST confirm successful acquisition of all parameters before proceeding
 
 ## Steps
 
-### 1. Detect Input Mode
+### 1. Parse Plan and Determine Target Step
 
-Automatically determine whether input is a description or PDD plan.
-
-**Constraints:**
-- You MUST check if input is a file path that exists
-- If file exists, You MUST read it and check for PDD plan structure (checklist, numbered steps)
-- If file contains PDD checklist format, You MUST set mode to "pdd"
-- If input is text or file without PDD structure, You MUST set mode to "description"
-- You MUST inform user which mode was detected
-- You MUST validate that PDD plans follow expected format with numbered steps
-
-### 2. Analyze Input
-
-Parse and understand the input content based on detected mode.
+Read the implementation plan and identify which step to process.
 
 **Constraints:**
-- For PDD mode: You MUST parse implementation plan and extract steps/checklist status
-- For PDD mode: You MUST determine target step based on step_number parameter or first uncompleted step
-- For description mode: You MUST identify the core functionality being requested
-- You MUST extract any technical requirements, constraints, or preferences mentioned
-- You MUST determine the appropriate complexity level (Low/Medium/High)
-- You MUST identify the likely technology stack or domain area
+- You MUST read the plan file and parse its checklist and numbered steps
+- You MUST determine the target step: use step_number if provided, otherwise find the first uncompleted step from the checklist
+- If all steps are complete, you MUST inform the user and ask how to proceed
+- You MUST read the design document (at `{project_dir}/design/detailed-design.md` or as referenced in the plan) to understand the full context
+- You SHOULD read relevant research documents in `{project_dir}/research/` if they inform the target step
 
-### 3. Structure Requirements
+### 2. Break Down Step into Tasks
 
-Organize requirements and determine task breakdown based on mode.
-
-**Constraints:**
-- For PDD mode: You MUST extract target step's title, description, demo requirements, and constraints
-- For PDD mode: You MUST preserve integration notes with previous steps
-- For PDD mode: You MUST identify which specific research documents (if any) are directly relevant to each task being created
-- For description mode: You MUST identify specific functional requirements from the description
-- You MUST infer reasonable technical constraints and dependencies
-- You MUST create measurable acceptance criteria using Given-When-Then format
-- You MUST prepare task breakdown plan for approval
-
-### 4. Plan Tasks
-
-Present task breakdown for user approval before generation.
+Analyze the target step and break it into logical code tasks. This step is non-interactive — use best judgement to produce a good breakdown.
 
 **Constraints:**
-- You MUST analyze content to identify logical sub-tasks for implementation
-- You MUST present concise one-line summary for each planned code task
-- You MUST show proposed task sequence and dependencies
-- You MUST ask user to approve the plan before proceeding
-- You MUST allow user to request modifications to the task breakdown
-- You MUST NOT proceed to generate actual code task files until user explicitly approves
+- You MUST extract the step's objective, implementation guidance, test requirements, integration notes, and demo criteria
+- You MUST break the step into logical sub-tasks focusing on functional components
+- You MUST NOT create separate tasks for testing — test requirements belong in each functional task
+- You MUST identify which research documents (if any) are directly relevant to each task
+- If the step would produce more than 5-6 tasks, you MUST split at a natural boundary and escalate to the user for guidance
+- You MUST log a concise one-line summary for each planned task with proposed sequence and dependencies
 
-### 5. Generate Tasks
+### 3. Generate Task Files
 
-Create appropriate file structure based on mode and approved plan.
+Create code task files for the approved breakdown.
 
 **Constraints:**
-- For PDD mode: You MUST create a folder named `step{NN}` where NN is zero-padded (e.g., step01, step02, step10)
-- For PDD mode: You MUST create multiple code task files within the step folder, named sequentially: `task-01-{title}.code-task.md`, `task-02-{title}.code-task.md`, etc.
-- For PDD mode: You MUST break down the step into logical implementation phases focusing on functional components, NOT separate testing tasks
-- For PDD mode: You MUST include "Reference Documentation" section with path to design/detailed-design.md as required reading
-- For PDD mode: You MUST include specific research documents in "Additional References" only if they are directly relevant to the task (e.g., specific technology research for that component)
-- For PDD mode: You MUST add a note instructing agents to read the detailed design before implementation
-- For description mode: You MUST create single task or multiple tasks as planned
-- You MUST generate task names using kebab-case format
-- You MUST create files with `.code-task.md` extension
-- You MUST follow the exact format specified in the Code Task Format section below
-- You MUST include comprehensive acceptance criteria that cover the main functionality
-- You MUST include unit test requirements as part of the acceptance criteria for each implementation task
-- You MUST NOT create separate tasks for "add unit tests" or "write tests" because testing should be integrated into each functional implementation task
+- You MUST create a folder named `step{NN}` (zero-padded) within output_dir (e.g., `step01`, `step02`)
+- You MUST create task files named sequentially: `task-01-{title}.code-task.md`, `task-02-{title}.code-task.md`, etc.
+- You MUST use kebab-case for task names
+- You MUST follow the Code Task Format below
+- You MUST include a "Reference Documentation" section with the path to the design document as required reading
+- You MUST include specific research documents in "Additional References" only if directly relevant to that task
+- You MUST include comprehensive acceptance criteria covering functionality and tests
 - You MUST provide realistic complexity assessment and required skills
-- You MUST save files to the specified output directory
 
-### 6. Report Results
+### 4. Report Results
 
-Inform user about generated tasks and next steps.
+Inform the user about generated tasks and next steps.
 
 **Constraints:**
-- You MUST list all generated code task files with their paths
-- For PDD mode: You MUST provide the step demo requirements for context
-- For description mode: You MUST provide a brief summary of what was created
-- You MUST suggest running code-assist on each task in appropriate sequence
-- For PDD mode: You MUST NOT create any additional log files or summary documents
-- For description mode: You MUST offer to create additional related tasks if the scope seems large
+- You MUST list all generated task files with their paths
+- You MUST include the step's demo requirements for context
+- You MUST suggest running `task-to-code` on each task in sequence
+- You MUST NOT mark the plan's checklist item as complete — the checklist tracks implementation progress, not task generation. Re-running plan-to-tasks for the same step will regenerate its tasks
 
-## Code Task Format Specification
+## Code Task Format
 
-Each code task file MUST follow this exact structure:
+Each code task file MUST follow this structure:
 
 ```markdown
 # Task: [Task Name]
 
 ## Description
-[A clear description of what needs to be implemented and why]
+[What needs to be implemented and why]
 
 ## Background
-[Relevant context and background information needed to understand the task]
+[Context needed to understand the task]
 
 ## Reference Documentation
 **Required:**
@@ -129,20 +90,18 @@ Each code task file MUST follow this exact structure:
 **Additional References (if relevant to this task):**
 - [Specific research document or section]
 
-**Note:** You MUST read the detailed design document before beginning implementation. Read additional references as needed for context.
+**Note:** Read the detailed design document before beginning implementation.
 
 ## Technical Requirements
 1. [First requirement]
 2. [Second requirement]
-3. [Third requirement]
 
 ## Dependencies
-- [First dependency with details]
-- [Second dependency with details]
+- [Dependency with details]
 
 ## Implementation Approach
-1. [First implementation step or approach]
-2. [Second implementation step or approach]
+1. [First step or approach]
+2. [Second step or approach]
 
 ## Acceptance Criteria
 
@@ -151,162 +110,46 @@ Each code task file MUST follow this exact structure:
    - When [action]
    - Then [expected result]
 
-2. **[Another Criterion]**
-   - Given [precondition]
-   - When [action]
-   - Then [expected result]
-
 ## Metadata
 - **Complexity**: [Low/Medium/High]
-- **Labels**: [Comma-separated list of labels]
-- **Required Skills**: [Skills needed for implementation]
-```
-
-### Code Task Format Example
-
-```markdown
-# Task: Create Email Validator Function
-
-## Description
-Create a function that validates email addresses and returns detailed error messages for invalid formats. This will be used across the application to ensure data quality and provide user-friendly feedback.
-
-## Background
-The application currently accepts any string as an email address, leading to data quality issues and failed communications. We need a robust validation function that can identify common email format errors and provide specific feedback to users.
-
-## Reference Documentation
-**Required:**
-- Design: planning/design/detailed-design.md
-
-**Additional References (if relevant to this task):**
-- planning/research/validation-libraries.md (for email validation approach)
-
-**Note:** You MUST read the detailed design document before beginning implementation. Read additional references as needed for context.
-
-## Technical Requirements
-1. Create a function that accepts an email string and returns validation results
-2. Implement comprehensive email format validation using regex or email parsing library
-3. Return detailed error messages for specific validation failures
-4. Support common email formats including international domains
-5. Include performance optimization for high-volume validation
-
-## Dependencies
-- Email validation library or regex patterns
-- Error handling framework for structured error responses
-- Unit testing framework for comprehensive test coverage
-
-## Implementation Approach
-1. Research and select appropriate email validation approach (regex vs library)
-2. Implement core validation logic with specific error categorization
-3. Add comprehensive error messaging for different failure types
-4. Optimize for performance if needed for high-volume scenarios
-
-## Acceptance Criteria
-
-1. **Valid Email Acceptance**
-   - Given a properly formatted email address
-   - When the validation function is called
-   - Then the function returns success with no errors
-
-2. **Invalid Format Detection**
-   - Given an email with invalid format (missing @, invalid characters, etc.)
-   - When the validation function is called
-   - Then the function returns failure with specific error message
-
-3. **Detailed Error Messages**
-   - Given various types of invalid emails
-   - When validation fails
-   - Then specific error messages are returned (e.g., "Missing @ symbol", "Invalid domain format")
-
-4. **Performance Requirements**
-   - Given 1000 email validations
-   - When executed in sequence
-   - Then all validations complete within 1 second
-
-5. **Unit Test Coverage**
-   - Given the email validator implementation
-   - When running the test suite
-   - Then all validation scenarios have corresponding unit tests with >90% coverage
-
-## Metadata
-- **Complexity**: Low
-- **Labels**: Validation, Email, Data Quality, Utility Function
-- **Required Skills**: Regular expressions, email standards, unit testing
+- **Labels**: [Comma-separated list]
+- **Required Skills**: [Skills needed]
 ```
 
 ## Examples
 
-### Example Input (Description Mode)
+### Example Input
 ```
-input: "I need a function that validates email addresses and returns detailed error messages"
-output_dir: ".agents/tasks/my-project"
-```
-
-### Example Output (Description Mode)
-```
-Detected mode: description
-
-Generated code task: .agents/tasks/my-project/email-validator.code-task.md
-
-Created task for email validation functionality with comprehensive acceptance criteria and implementation guidance.
-
-Next steps: Run code-assist on the generated task to implement the solution.
+project_dir: ".agents/planning/template-feature"
 ```
 
-### Example Input (PDD Mode)
+### Example Output
 ```
-input: ".agents/planning/my-project/implementation/plan.md"
-```
+Parsed plan: 12 steps, 1 completed.
+Processing Step 2: Core data models and validation.
 
-### Example Output (PDD Mode)
-```
-Detected mode: pdd
+Generated: .agents/tasks/template-feature/step02/
+- task-01-create-data-models — Define Template and Field data models with persistence
+- task-02-implement-validation — Add field-level validation rules and error reporting
+- task-03-add-serialization — JSON serialization/deserialization with round-trip tests
 
-Generated code tasks for step 2: .agents/tasks/my-project/step02/
+Step 2 demo: Working data models with validation that can create, validate, and serialize/deserialize data objects.
 
-Created tasks:
-- task-01-create-data-models.code-task.md
-- task-02-implement-validation.code-task.md  
-- task-03-add-serialization.code-task.md
-
-Next steps: Run code-assist on each task in sequence
-
-Step demo: Working data models with validation that can create, validate, and serialize/deserialize data objects
+Next: Run `task-to-code` on each task in sequence.
 ```
 
 ## Troubleshooting
 
-### Vague Description (Description Mode)
-If the task description is too vague or unclear:
-- You SHOULD ask clarifying questions about specific requirements
-- You SHOULD suggest common patterns or approaches for the domain
-- You SHOULD create a basic task and offer to refine it based on feedback
+### Plan File Not Found
+If the plan file doesn't exist at the expected path:
+- You SHOULD check if project_dir contains an `implementation/` directory
+- You SHOULD suggest running `design-to-plan` first if no plan exists
 
-### Complex Description (Description Mode)
-If the description suggests a very large or complex task:
-- You SHOULD suggest breaking it into multiple smaller tasks
-- You SHOULD focus on the core functionality for the initial task
-- You SHOULD offer to create additional related tasks
-
-### Missing Technical Details (Description Mode)
-If technical implementation details are unclear:
-- You SHOULD make reasonable assumptions based on common practices
-- You SHOULD include multiple implementation approaches in the task
-- You SHOULD note areas where the user should make technical decisions
-
-### Plan File Not Found (PDD Mode)
-If the specified plan file doesn't exist:
-- You SHOULD check if the path is a directory and look for plan.md within it
-- You SHOULD suggest common locations where PDD plans might be stored
-- You SHOULD validate the file path format and suggest corrections
-
-### Invalid Plan Format (PDD Mode)
-If the plan doesn't follow expected PDD format:
-- You SHOULD identify what sections are missing or malformed
-- You SHOULD suggest running the PDD script to generate a proper plan
-- You SHOULD attempt to extract what information is available
-
-### No Uncompleted Steps (PDD Mode)
+### All Steps Complete
 If all steps in the checklist are marked complete:
-- You SHOULD inform the user that all steps appear to be complete
-- You SHOULD ask if they want to generate a task for a specific step anyway
-- You SHOULD suggest reviewing the implementation plan for potential new steps
+- You SHOULD inform the user and ask if they want to regenerate tasks for a specific step
+- You SHOULD suggest reviewing the plan for potential additional steps
+
+### Step Too Large
+If a step would produce more than 5-6 tasks:
+- You MUST escalate to the user for guidance on where to split
