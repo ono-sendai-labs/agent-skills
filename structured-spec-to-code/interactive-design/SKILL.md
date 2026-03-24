@@ -1,17 +1,17 @@
 ---
 name: interactive-design
-description: This workflow guides you through the process of transforming a rough idea into a detailed design document with an implementation plan and todo list. It follows the Prompt-Driven Development methodology to systematically refine your idea, conduct necessary research, create a comprehensive design, and develop an actionable implementation plan. The process is designed to be iterative, allowing movement between requirements clarification and research as needed.
+description: This workflow guides you through the process of transforming a rough idea into a detailed design document. It systematically refines your idea through interactive requirements clarification, research, and iterative design. Use when the user has a rough idea, feature concept, or project proposal that needs to be developed into a comprehensive design before implementation — whether for a greenfield project or adding features to an existing system.
 ---
 
-# Prompt-Driven Development
+# Interactive Design
 
 ## Overview
 
-This workflow guides you through the process of transforming a rough idea into a detailed design document with an implementation plan and todo list. It follows the Prompt-Driven Development methodology to systematically refine your idea, conduct necessary research, create a comprehensive design, and develop an actionable implementation plan. The process is designed to be iterative, allowing movement between requirements clarification and research as needed.
+Transform a rough idea into a detailed design document through interactive requirements clarification, research, and iterative design. The process is collaborative and iterative, allowing movement between requirements clarification and research as needed.
 
 ## Parameters
 
-- **rough_idea** (required): The initial concept or idea you want to develop into a detailed design
+- **rough_idea** (required): The initial concept or idea to develop into a detailed design
 - **project_name** (optional): A short, descriptive name for the project. If not provided, will be generated from the rough idea
 - **project_dir** (optional, default: ".agents/planning/{project_name}"): The base directory where all project files will be stored
 
@@ -20,7 +20,7 @@ This workflow guides you through the process of transforming a rough idea into a
 - You MUST support multiple input methods including:
   - Direct input: Text provided directly in the conversation
   - File path: Path to a local file containing the rough idea
-  - URL: Link to an internal resource (e.g., Quip doc, wiki page)
+  - URL: Link to an internal resource (e.g., document, wiki page)
   - Other methods: You SHOULD be open to other ways the user might want to provide the idea
 - You MUST use appropriate tools to access content based on the input method
 - You MUST confirm successful acquisition of all parameters before proceeding
@@ -37,15 +37,16 @@ Set up a directory structure to organize all artifacts created during the proces
 
 **Constraints:**
 - You MUST create the specified project directory if it doesn't already exist
-- You MUST create the following files:
+- You MUST create the following file:
   - {project_dir}/rough-idea.md (containing the provided rough idea)
-  - {project_dir}/idea-honing.md (for requirements clarification)
 - You MUST create the following subdirectories:
   - {project_dir}/research/ (directory for research notes)
   - {project_dir}/design/ (directory for design documents)
-  - {project_dir}/implementation/ (directory for implementation plans)
 - You MUST notify the user when the structure has been created
 - You MUST remind the user to keep all project files in context throughout the process
+- If the design targets an existing codebase, you MUST check if a codebase summary exists at `.agents/summary/`:
+  - If it exists: check `.agents/summary/.last_commit` and use the VCS diff-stat (e.g., changes since that revision) to assess how current it is. If the summary is significantly out of date, suggest the user run the `codebase-summary` workflow to refresh it before proceeding
+  - If it does not exist: suggest the user run the `codebase-summary` workflow first, as the design process will benefit from an up-to-date understanding of the codebase
 
 ### 2. Initial Process Planning
 
@@ -55,6 +56,7 @@ Determine the initial approach and sequence for requirements clarification and r
 - You MUST ask the user if they prefer to:
   - Start with requirements clarification (default)
   - Start with preliminary research on specific topics
+  - Explore relevant parts of the existing codebase first (for brownfield projects — use the codebase summary and code navigation tools to understand the areas affected by the design)
   - Provide additional context or information before proceeding
 - You MUST adapt the subsequent process based on the user's preference
 - You MUST explain that the process is iterative and the user can move between requirements clarification and research as needed
@@ -67,24 +69,19 @@ Guide the user through a series of questions to refine the initial idea and deve
 
 **Constraints:**
 - You MUST create an empty {project_dir}/idea-honing.md file if it doesn't already exist
-- You MUST ask ONLY ONE question at a time and wait for the user's response before asking the next question
-- You MUST NOT list multiple questions for the user to answer at once because this overwhelms users and leads to incomplete responses
 - You MUST NOT pre-populate answers to questions without user input because this assumes user preferences without confirmation
-- You MUST NOT write multiple questions and answers to the idea-honing.md file at once because this skips the interactive clarification process
-- You MUST follow this exact process for each question:
-  1. Formulate a single question
-  2. Append the question to {project_dir}/idea-honing.md
-  3. Present the question to the user in the conversation
-  4. Wait for the user's complete response, which may require brief back-and-forth dialogue across multiple turns.
-  5. Once you have their complete response, append the user's answer (or final decision) to {project_dir}/idea-honing.md
-  6. Only then proceed to formulating the next question
+- You MUST NOT write answers to the idea-honing.md file before the user has responded
+- For questions that are nuanced, open-ended, or likely to benefit from discussion, you MUST ask ONE question at a time
+- For questions that are straightforward and factual (e.g., target platform, supported formats, naming preferences), you MAY batch 2-4 related questions together in a single message
+- You MUST wait for the user's complete response before proceeding, which may require brief back-and-forth dialogue across multiple turns
+- After receiving the user's response, you MUST append both questions and answers to {project_dir}/idea-honing.md before proceeding
 - You MAY suggest possible answers when asking a question, but MUST wait for the user's actual response
 - You MUST format the idea-honing.md document with clear question and answer sections
 - You MUST include the final chosen answer in the answer section
 - You MAY include alternative options that were considered before the final decision
-- You MUST ensure you have the user's complete response before recording it and moving to the next question
 - You MUST continue asking questions until sufficient detail is gathered
 - You SHOULD ask about edge cases, user experience, technical constraints, and success criteria
+- For brownfield projects, you SHOULD also ask about integration with existing functionality, backward compatibility, impact on existing users/workflows, and migration concerns. Use the codebase summary (if available) to inform these questions
 - You SHOULD adapt follow-up questions based on previous answers
 - You MAY suggest options when the user is unsure about a particular aspect
 - You MAY recognize when the requirements clarification process appears to have reached a natural conclusion
@@ -107,10 +104,9 @@ Conduct research on relevant technologies, libraries, or existing code that coul
 - You MUST incorporate user suggestions into the research plan
 - You MUST document research findings in separate markdown files in the {project_dir}/research/ directory
 - You SHOULD organize research by topic (e.g., {project_dir}/research/existing-code.md, {project_dir}/research/technologies.md)
-- You MUST include mermaid diagrams when documenting system architectures, data flows, or component relationships in research
+- You SHOULD include mermaid diagrams when documenting system architectures, data flows, or component relationships in research
 - You MUST include links to relevant references and sources when research is based on external materials (websites, documentation, articles, etc.)
-- You MAY use available tools to search the codebase, read documentation, and gather relevant information
-- You MUST ask the user whether other available search tools should also be used.
+- You SHOULD use available tools (including code navigation, search, and the codebase summary if available) to gather relevant information
 - You MUST periodically check with the user during the research process (these check-ins may involve brief dialogue to clarify feedback) to:
   - Share preliminary findings
   - Ask for feedback and additional guidance
@@ -152,6 +148,9 @@ Develop a comprehensive design document based on the requirements and research.
   - Error Handling
   - Testing Strategy
   - Appendices (Technology Choices, Research Findings, Alternative Approaches)
+- For brownfield projects, you MUST also include:
+  - Integration with Existing System — how the design fits into the current architecture, referencing the codebase summary where applicable
+  - Migration Strategy / Backward Compatibility — how to transition from the current state without breaking existing functionality
 - You MUST consolidate all requirements from the idea-honing.md file into the Detailed Requirements section
 - You MUST include an appendix section that summarizes key research findings, including:
   - Major technology choices with pros and cons
@@ -163,52 +162,18 @@ Develop a comprehensive design document based on the requirements and research.
 - You MUST ensure the design addresses all requirements identified during the clarification process
 - You SHOULD highlight design decisions and their rationales, referencing research findings where applicable
 - You MUST review the design with the user and iterate based on feedback
-- You MUST explicitly ask the user if they are ready to proceed to implementation before moving to Step 7
-- You MUST NOT proceed to the implementation plan step without explicit user confirmation because this could skip important design refinement
 - You MUST offer to return to requirements clarification or research if gaps are identified during design
+- You MUST explicitly ask the user if they consider the design complete before proceeding to the summary step
 
-### 7. Develop Implementation Plan
-
-Create a structured implementation plan with a series of steps for implementing the design.
-
-**Constraints:**
-- You MUST create an implementation plan at {project_dir}/implementation/plan.md
-- You MUST include a checklist at the beginning of the plan.md file to track implementation progress
-- You MUST use the following specific instructions when creating the implementation plan:
-  ```
-  Convert the design into a series of implementation steps that will build each component in a test-driven manner following agile best practices. Each step must result in a working, demoable increment of functionality. Prioritize best practices, incremental progress, and early testing, ensuring no big jumps in complexity at any stage. Make sure that each step builds on the previous steps, and ends with wiring things together. There should be no hanging or orphaned code that isn't integrated into a previous step.
-  ```
-- You MUST format the implementation plan as a numbered series of detailed steps
-- Each step in the plan MUST be written as a clear implementation objective
-- Each step MUST begin with "Step N:" where N is the sequential number
-- You MUST ensure each step includes:
-  - A clear objective
-  - General implementation guidance
-  - Test requirements for the functionality introduced in this step
-  - How it integrates with previous work
-  - **Demo** - explicit description of the working functionality that can be demonstrated after completing this step
-- You MUST ensure each step results in working, demoable functionality that provides value
-- You MUST sequence steps so that core end-to-end functionality is available as early as possible
-- You MUST NOT include excessive implementation details that are already covered in the design document because this creates redundancy and potential inconsistencies
-- You MUST assume that all context documents (requirements, design, research) will be available during implementation
-- You MUST break down the implementation into a series of discrete, manageable steps
-- You MUST ensure each step builds incrementally on previous steps
-- You MUST structure each step so that tests are written before or alongside the implementation code
-- You MUST include test requirements as part of each step that introduces or modifies functionality, not as separate testing-only steps
-- You MUST NOT create steps that are solely dedicated to testing or "adding tests" for functionality implemented in previous steps because this violates test-driven development principles and allows untested code to accumulate
-- You MUST ensure the plan covers all aspects of the design
-- You SHOULD sequence steps to validate core functionality early
-- You MUST ensure the checklist items correspond directly to the steps in the implementation plan
-
-### 8. Summarize and Present Results
+### 7. Summarize and Present Results
 
 Provide a summary of all artifacts created and next steps.
 
 **Constraints:**
 - You MUST create a summary document at {project_dir}/summary.md
 - You MUST list all artifacts created during the process
-- You MUST provide a brief overview of the design and implementation plan
-- You MUST suggest next steps for the user
+- You MUST provide a brief overview of the design
+- You MUST suggest next steps, including running the `design-to-plan` workflow to create an implementation plan from the design
 - You SHOULD highlight any areas that may need further refinement
 - You MUST present this summary to the user in the conversation
 
@@ -233,13 +198,13 @@ Based on your requirements, I've identified several areas that would benefit fro
 2. **Storage and versioning approaches** - How to handle template versions and sharing
 3. **Custom field validation patterns** - Best practices for dynamic field validation
 
-I notice you have several additional MCP search tools available beyond the standard ones. Should I incorporate these additional search tools into the research process for broader coverage of template management solutions and industry best practices?
+Should I also explore any specific parts of the existing codebase or internal documentation that might inform these areas?
 
 ---
 
 # Project Summary
 
-I've completed the transformation of your rough idea into a detailed design with an implementation plan. Here's what was created:
+I've completed the transformation of your rough idea into a detailed design. Here's what was created:
 
 ## Directory Structure
 - .agents/planning/template-feature/
@@ -251,8 +216,6 @@ I've completed the transformation of your rough idea into a detailed design with
     - external-solutions.md
   - design/
     - detailed-design.md
-  - implementation/
-    - plan.md (includes implementation checklist)
   - summary.md (this document)
 
 ## Key Design Elements
@@ -262,15 +225,11 @@ I've completed the transformation of your rough idea into a detailed design with
 - Custom fields with validation
 - Document generation engine
 
-## Implementation Approach
-The implementation plan breaks down the work into 12 incremental steps, starting with core data models and building up to the complete feature set.
-
 ## Next Steps
-1. Review the detailed design document at docs/template-feature/design/detailed-design.md
-2. Check the implementation plan and checklist at docs/template-feature/implementation/plan.md
-3. Begin implementation following the checklist in the implementation plan
+1. Review the detailed design document at .agents/planning/template-feature/design/detailed-design.md
+2. When satisfied with the design, run the `design-to-plan` workflow to create an implementation plan
 
-Would you like me to explain any specific part of the design or implementation plan in more detail?
+Would you like me to explain any specific part of the design in more detail?
 ```
 
 ## Troubleshooting
