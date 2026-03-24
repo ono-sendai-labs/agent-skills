@@ -47,6 +47,16 @@ Perform comprehensive analysis of the codebase to understand its structure, comp
 - You MUST document the technology stack and dependencies
 - You MUST identify key interfaces, APIs, and integration points
 - You MUST analyze code patterns and design principles used throughout the codebase
+- You MUST analyze coding style and conventions, including:
+  - Naming conventions (variables, functions, classes, files, directories)
+  - Code structure patterns (how typical modules/classes/files are organized — imports, constants, class/function ordering)
+  - Error handling idioms (how errors are created, propagated, reported)
+  - Testing conventions (test file naming, test structure, assertion style, fixture/mock approach)
+  - Logging and observability patterns
+  - Import and dependency conventions
+- You MUST examine linter, formatter, and editor configuration files (e.g., `.editorconfig`, `.eslintrc*`, `.prettierrc*`, `pyproject.toml`, `rustfmt.toml`, `.clang-format`, etc.) and document what they enforce
+- You MUST ask the user whether explicit coding style guides or style reference skills are available for the languages used in the codebase, unless these can be inferred from project configuration (e.g., a linter config referencing a specific style guide)
+- You MUST identify representative code examples — specific files that exemplify the codebase's conventions for common patterns (e.g., "a typical request handler", "a typical unit test", "a typical data model") — and record their paths
 - You MUST use Mermaid diagrams for visual representations
 - You MUST document basic codebase information in {codebase_summary_dir}/codebase_info.md
 - If update_mode is true, you MUST:
@@ -74,6 +84,12 @@ Create comprehensive documentation files for different aspects of the system.
   - {codebase_summary_dir}/data_models.md (data structures and models)
   - {codebase_summary_dir}/workflows.md (key processes and workflows)
   - {codebase_summary_dir}/dependencies.md (external dependencies and their usage)
+  - {codebase_summary_dir}/coding_style.md (coding conventions, style rules, and representative examples)
+- You MUST ensure the coding_style.md file includes:
+  - A summary of enforced style rules from linter/formatter configs
+  - References to external style guides (if identified or provided by the user)
+  - Inferred conventions for naming, structure, error handling, testing, logging, and imports — each with concrete examples drawn from the codebase
+  - A "Representative Examples" section with file paths pointing to files that best exemplify each common pattern (e.g., request handler, unit test, integration test, data model, utility module), with a brief note on why each was chosen
 - You MUST ensure each documentation file contains relevant information from the codebase analysis
 - If update_mode is true, you MUST:
   - Preserve existing documentation structure where possible
@@ -132,6 +148,7 @@ Generating documentation files...
 ✅ Created index.md with knowledge base metadata
 ✅ Generated architecture.md, components.md, interfaces.md
 ✅ Generated data_models.md, workflows.md, dependencies.md
+✅ Generated coding_style.md with conventions and representative examples
 
 Reviewing documentation...
 ✅ Consistency check complete
@@ -176,6 +193,7 @@ Summary:
 ├── data_models.md
 ├── workflows.md
 ├── dependencies.md
+├── coding_style.md
 ├── review_notes.md
 └── recent_changes.md (if update_mode)
 ```

@@ -30,7 +30,7 @@ The base directory defaults to `.agents/` and is configurable via the `agents_di
 
 ```
 {agents_dir}/
-├── summary/                          # Codebase summary (from codebase-summary)
+├── summary/                          # Codebase summary & coding style (from codebase-summary)
 ├── planning/{project_name}/          # Design artifacts (from interactive-design)
 │   ├── rough-idea.md
 │   ├── idea-honing.md

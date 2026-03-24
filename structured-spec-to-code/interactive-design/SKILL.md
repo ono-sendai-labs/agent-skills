@@ -48,6 +48,7 @@ Set up a directory structure to organize all artifacts created during the proces
 - If the design targets an existing codebase, you MUST check if a codebase summary exists at `{agents_dir}/summary/`:
   - If it exists: check `.agents/summary/.last_commit` and use the VCS diff-stat (e.g., changes since that revision) to assess how current it is. If the summary is significantly out of date, suggest the user run the `codebase-summary` workflow to refresh it before proceeding
   - If it does not exist: suggest the user run the `codebase-summary` workflow first, as the design process will benefit from an up-to-date understanding of the codebase
+  - If `{agents_dir}/summary/coding_style.md` exists, you MUST read it — architectural conventions (e.g., module organization patterns, encapsulation boundaries, error handling strategy) will directly inform design decisions
 
 ### 2. Initial Process Planning
 
@@ -83,6 +84,7 @@ Guide the user through a series of questions to refine the initial idea and deve
 - You MUST continue asking questions until sufficient detail is gathered
 - You SHOULD ask about edge cases, user experience, technical constraints, and success criteria
 - For brownfield projects, you SHOULD also ask about integration with existing functionality, backward compatibility, impact on existing users/workflows, and migration concerns. Use the codebase summary (if available) to inform these questions
+- For brownfield projects, you SHOULD surface relevant architectural conventions from coding_style.md (if available) during requirements clarification — e.g., if the codebase convention is that unsafe code lives in dedicated wrapper crates, or that each domain concept has its own module with a public facade, these conventions constrain the design and the user should confirm whether they apply to the new work
 - You SHOULD adapt follow-up questions based on previous answers
 - You MAY suggest options when the user is unsure about a particular aspect
 - You MAY recognize when the requirements clarification process appears to have reached a natural conclusion
@@ -151,6 +153,7 @@ Develop a comprehensive design document based on the requirements and research.
   - Appendices (Technology Choices, Research Findings, Alternative Approaches)
 - For brownfield projects, you MUST also include:
   - Integration with Existing System — how the design fits into the current architecture, referencing the codebase summary where applicable
+  - Adherence to Established Conventions — how the design follows (or intentionally departs from) architectural and code organization conventions documented in coding_style.md, with rationale for any departures
   - Migration Strategy / Backward Compatibility — how to transition from the current state without breaking existing functionality
 - You MUST consolidate all requirements from the idea-honing.md file into the Detailed Requirements section
 - You MUST include an appendix section that summarizes key research findings, including:

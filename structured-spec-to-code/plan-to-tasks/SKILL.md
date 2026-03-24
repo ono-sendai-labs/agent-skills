@@ -33,13 +33,14 @@ Read the implementation plan and identify which step to process.
 - You MUST determine the target step: use step_number if provided, otherwise find the first uncompleted step from the checklist
 - If all steps are complete, you MUST inform the user and ask how to proceed
 - You MUST read the design document (at `{project_dir}/design/detailed-design.md` or as referenced in the plan) to understand the full context
+- You SHOULD read `{agents_dir}/summary/coding_style.md` if available — code organization conventions and testing patterns inform how tasks should be scoped and bounded
 - You SHOULD read relevant research documents in `{project_dir}/research/` if they inform the target step
 
 ### 2. Break Down Step into Tasks
 
 Analyze the target step and break it into logical code tasks. This step is non-interactive — use best judgement to produce a good breakdown.
 
-Each code task MUST be an **atomic commit** — after implementing a task, the repository builds and all tests pass. A task should focus on a **single concern** (one data model, one API endpoint, one validation layer) and be **independently testable** (tests can be written without code from later tasks in the same step).
+Each code task MUST be an **atomic commit** — after implementing a task, the repository builds and all tests pass. A task should focus on a **single concern** (one data model, one API endpoint, one validation layer) and be **independently testable** (tests can be written without code from later tasks in the same step). Task boundaries should respect code organization conventions from coding_style.md — e.g., if the convention is that each concern gets its own module with a safe public interface, a task should produce a complete module, not half of one.
 
 **Constraints:**
 - You MUST extract the step's objective, implementation guidance, test requirements, integration notes, and demo criteria

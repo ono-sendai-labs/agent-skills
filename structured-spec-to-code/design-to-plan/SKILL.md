@@ -33,6 +33,7 @@ Read and understand the design document and any supporting artifacts.
 - You MUST identify all components, interfaces, data models, and workflows described in the design
 - You MUST identify dependencies between components
 - For brownfield projects (indicated by Integration or Migration sections in the design), you SHOULD also review the codebase summary at `{agents_dir}/summary/` if available, to understand integration points and sequencing constraints
+- You SHOULD read `{agents_dir}/summary/coding_style.md` if available — architectural conventions (module organization, encapsulation boundaries, testing patterns) affect how steps should be structured and sequenced
 
 ### 2. Create Implementation Plan
 
@@ -67,6 +68,7 @@ Create a structured implementation plan as a numbered series of incremental step
   - **Thematic coherence** — the tasks within a step share a logical thread (same feature slice, same component, or same architectural layer). Don't mix vertical slices with horizontal layers in one step
   - **Dependency closure** — the step introduces everything needed for its demo; no hanging dependencies on future steps
   - **Independently valuable** — if work stopped after this step, the codebase is in a useful (not half-done) state
+  - **Convention-aligned** — step boundaries should respect established code organization conventions (e.g., if the codebase convention is that each domain concept gets its own module, a step that introduces a new domain concept should include the full module structure, not split it across steps)
   - **2-4 code tasks typical** — each step should decompose into roughly 2-4 code tasks. Fewer than 2 suggests the step is too granular; more than 5-6 suggests it should be split
 
 ### 3. Present and Iterate

@@ -62,6 +62,7 @@ Analyze requirements and research existing patterns in the codebase.
 - If you discover inconsistencies between the task and the actual codebase, you MUST escalate to the user
 - You SHOULD identify similar implementations in the codebase to follow established patterns
 - You SHOULD consult the codebase summary at `{agents_dir}/summary/` if available, to understand broader system context — especially useful for tasks without a design document
+- You SHOULD read `{agents_dir}/summary/coding_style.md` if it exists, and record the applicable conventions and representative examples in context.md — this is the primary style reference for the GREEN and REFACTOR phases
 
 ### 3. Plan
 
@@ -100,14 +101,14 @@ For each requirement, in the order defined by the implementation plan:
 
 **GREEN — Implement just enough code to pass:**
 - You MUST implement only what is needed to make the current test(s) pass
-- You MUST follow the coding style and conventions of the existing codebase
+- You MUST follow the coding style and conventions of the existing codebase (consult coding_style.md conventions recorded in context.md)
 - You MUST place all implementation code in the appropriate repository directories
 - You MUST follow YAGNI, KISS, and SOLID principles
 - You MUST execute tests to verify the new test passes and no existing tests broke
 
 **REFACTOR — Clean up while green:**
 - You MUST examine the code just written and refactor for clarity, removing duplication
-- You MUST ensure alignment with surrounding codebase conventions (naming, error handling, imports, etc.)
+- You MUST ensure alignment with surrounding codebase conventions (naming, error handling, imports, etc.) — use coding_style.md representative examples as the reference standard
 - You MUST prioritize readability and maintainability over clever optimizations
 - You MUST execute tests after refactoring to verify nothing broke
 
