@@ -59,6 +59,6 @@ For small, well-scoped changes that don't need a full design:
 ## Conventions
 
 - **Project directory**: `.agents/planning/{project_name}/` — contains design artifacts (idea-honing, research, design)
-- **Tasks directory**: `.agents/tasks/{project_name}/` — contains generated code task files
+- **Tasks directory**: `.agents/tasks/{project_name}/` — contains generated code task files. Tasks from plan-to-tasks live under `step{NN}/` subdirectories; tasks from interactive-coding-task live directly in the project folder
 - **Scratchpad directory**: `.agents/scratchpad/` — contains working documents from task-to-code (mirrors tasks directory structure)
 - **Codebase summary**: `.agents/summary/` — contains codebase documentation

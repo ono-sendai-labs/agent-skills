@@ -38,9 +38,12 @@ Read the implementation plan and identify which step to process.
 
 Analyze the target step and break it into logical code tasks. This step is non-interactive — use best judgement to produce a good breakdown.
 
+Each code task MUST be an **atomic commit** — after implementing a task, the repository builds and all tests pass. A task should focus on a **single concern** (one data model, one API endpoint, one validation layer) and be **independently testable** (tests can be written without code from later tasks in the same step).
+
 **Constraints:**
 - You MUST extract the step's objective, implementation guidance, test requirements, integration notes, and demo criteria
 - You MUST break the step into logical sub-tasks focusing on functional components
+- You MUST sequence tasks so that each builds on prior work — tasks that create things later tasks consume come first (e.g., "define schema" before "implement CRUD on that schema")
 - You MUST NOT create separate tasks for testing — test requirements belong in each functional task
 - You MUST identify which research documents (if any) are directly relevant to each task
 - If the step would produce more than 5-6 tasks, you MUST split at a natural boundary and escalate to the user for guidance
@@ -68,7 +71,7 @@ Inform the user about generated tasks and next steps.
 - You MUST list all generated task files with their paths
 - You MUST include the step's demo requirements for context
 - You MUST suggest running `task-to-code` on each task in sequence
-- You MUST NOT mark the plan's checklist item as complete — the checklist tracks implementation progress, not task generation. Re-running plan-to-tasks for the same step will regenerate its tasks
+- You MUST NOT mark the plan's checklist item as complete — the checklist tracks implementation progress, not task generation. `task-to-code` marks the step complete after the last task in the step is committed. Re-running plan-to-tasks for the same step will regenerate its tasks
 
 ## Code Task Format
 

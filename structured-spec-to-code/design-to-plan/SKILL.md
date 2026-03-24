@@ -61,6 +61,12 @@ Create a structured implementation plan as a numbered series of incremental step
 - You MUST NOT create steps solely dedicated to testing — test requirements belong in the step that introduces the functionality
 - You MUST ensure the plan covers all aspects of the design and the checklist items correspond directly to the steps
 - For brownfield projects, you MUST sequence integration and migration steps appropriately — typically early (to validate compatibility) rather than deferred to the end
+- You MUST use the following criteria when deciding step boundaries:
+  - **Demoable** — after completing the step, there is something tangible to show or test end-to-end. If a group of tasks doesn't produce something observable, the step is too thin
+  - **Thematic coherence** — the tasks within a step share a logical thread (same feature slice, same component, or same architectural layer). Don't mix vertical slices with horizontal layers in one step
+  - **Dependency closure** — the step introduces everything needed for its demo; no hanging dependencies on future steps
+  - **Independently valuable** — if work stopped after this step, the codebase is in a useful (not half-done) state
+  - **2-4 code tasks typical** — each step should decompose into roughly 2-4 code tasks. Fewer than 2 suggests the step is too granular; more than 5-6 suggests it should be split
 
 ### 3. Present and Iterate
 

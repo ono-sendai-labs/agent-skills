@@ -29,20 +29,21 @@ For brownfield projects, run **codebase-summary** first to give the design phase
 ```
 .agents/
 ├── summary/                          # Codebase summary (from codebase-summary)
-├── planning/{project_name}/          # Design artifacts
+├── planning/{project_name}/          # Design artifacts (from interactive-design)
 │   ├── rough-idea.md
 │   ├── idea-honing.md
 │   ├── research/
 │   ├── design/detailed-design.md
 │   └── implementation/plan.md
-├── tasks/{project_name}/             # Generated code task files
-│   ├── step01/
+├── tasks/{project_name}/             # Code task files
+│   ├── step01/                       #   from plan-to-tasks (grouped by plan step)
 │   │   ├── task-01-*.code-task.md
 │   │   └── task-02-*.code-task.md
-│   └── step02/
-│       └── ...
+│   ├── step02/
+│   │   └── ...
+│   └── task-01-*.code-task.md        #   from interactive-coding-task (no step folder)
 └── scratchpad/{project_name}/        # Working documents from task-to-code
-    └── step01/
+    └── step01/                       #   mirrors tasks/ structure
         └── task-01-*/
             ├── context.md
             ├── plan.md

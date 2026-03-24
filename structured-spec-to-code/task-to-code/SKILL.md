@@ -133,6 +133,7 @@ Create a conventional commit for the completed implementation.
 - You MUST NOT push to remote repositories
 - You MUST document the commit revision identifier in progress.md
 - You MUST verify all checklist items are marked complete before committing
+- After committing, if the task originates from a plan (i.e., it lives under a `step{NN}/` directory within `.agents/tasks/`), you MUST check whether all tasks in that step directory are now complete (all have a corresponding commit documented in their scratchpad's progress.md). If so, you MUST mark the corresponding checklist item in the implementation plan as complete (change `- [ ]` to `- [x]`)
 
 ## Examples
 
@@ -171,7 +172,7 @@ If builds fail during implementation:
 If changes span multiple packages:
 - You SHOULD verify package dependency order and build dependencies first
 - You SHOULD validate each package builds before proceeding to dependents
-- You SHOULD create separate commits per package in dependency order
+- You SHOULD still aim for a single commit per task. If the changes are too large or loosely coupled to fit in one commit, escalate — the task may need to be split
 
 ### Implementation Challenges
 If the implementation encounters unexpected challenges:
