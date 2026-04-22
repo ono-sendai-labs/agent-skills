@@ -46,7 +46,7 @@ Set up a directory structure to organize all artifacts created during the proces
 - You MUST notify the user when the structure has been created
 - You MUST remind the user to keep all project files in context throughout the process
 - If the design targets an existing codebase, you MUST check if a codebase summary exists at `{agents_dir}/summary/`:
-  - If it exists: check `.agents/summary/.last_commit` and use the VCS diff-stat (e.g., changes since that revision) to assess how current it is. If the summary is significantly out of date, suggest the user run the `codebase-summary` workflow to refresh it before proceeding
+  - If it exists: check `.agents/summary/last_commit` and use the VCS diff-stat (e.g., changes since that revision) to assess how current it is. If the summary is significantly out of date, suggest the user run the `codebase-summary` workflow to refresh it before proceeding
   - If it does not exist: suggest the user run the `codebase-summary` workflow first, as the design process will benefit from an up-to-date understanding of the codebase
   - If `{agents_dir}/summary/coding_style.md` exists, you MUST read it — architectural conventions (e.g., module organization patterns, encapsulation boundaries, error handling strategy) will directly inform design decisions
 
