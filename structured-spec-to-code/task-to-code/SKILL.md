@@ -46,6 +46,7 @@ Initialize the scratchpad and read all referenced documentation.
 - If the task has a Reference Documentation section, you MUST read the design document and any listed research documents
 - You MUST create a `context.md` file in the scratchpad for recording findings throughout the workflow
 - You MUST create a `progress.md` file using markdown checklists to track implementation progress
+- You MUST create an empty `work.log` file — this is the append-only TDD evidence log, populated during the Code phase
 - All documentation goes in the scratchpad; all code goes in the repository. Never mix them
 
 ### 2. Explore
@@ -98,6 +99,13 @@ For each requirement, in the order defined by the implementation plan:
 - You MUST follow the testing framework conventions used in the existing codebase
 - You MUST execute the test to verify it fails as expected
 - You MUST document the failure in progress.md
+- You MUST append the following to `{scratchpad}/work.log`, capturing both the command and its output:
+  ```
+  echo >> {scratchpad}/work.log "## Requirement <name>: RED - repo state"
+  bash -x -c "jj log -s --limit=4" >> {scratchpad}/work.log 2>&1
+  echo >> {scratchpad}/work.log "## Requirement <name>: RED - failing tests"
+  bash -x -c "<test command>" >> {scratchpad}/work.log 2>&1
+  ```
 
 **GREEN — Implement just enough code to pass:**
 - You MUST implement only what is needed to make the current test(s) pass
@@ -105,6 +113,18 @@ For each requirement, in the order defined by the implementation plan:
 - You MUST place all implementation code in the appropriate repository directories
 - You MUST follow YAGNI, KISS, and SOLID principles
 - You MUST execute tests to verify the new test passes and no existing tests broke
+- You MUST append the following to `{scratchpad}/work.log`:
+  ```
+  echo >> {scratchpad}/work.log "## Requirement <name>: GREEN - repo state"
+  bash -x -c "jj log -s --limit=4" >> {scratchpad}/work.log 2>&1
+  echo >> {scratchpad}/work.log "## Requirement <name>: GREEN - passing tests"
+  bash -x -c "<test command>" >> {scratchpad}/work.log 2>&1
+  ```
+- If an acceptance criterion specifies running an ad-hoc command (e.g. a CLI smoke test), append its output too:
+  ```
+  echo >> {scratchpad}/work.log "## Requirement <name>: acceptance - <criterion summary>"
+  bash -x -c "<ad-hoc command>" >> {scratchpad}/work.log 2>&1
+  ```
 
 **REFACTOR — Clean up while green:**
 - You MUST examine the code just written and refactor for clarity, removing duplication
@@ -188,5 +208,6 @@ If the implementation encounters unexpected challenges:
 {scratchpad}/
 ├── context.md      — Requirements, patterns, dependencies, implementation paths
 ├── plan.md         — Test scenarios and implementation plan
-└── progress.md     — TDD cycle tracking, decisions, checklist, commit status
+├── progress.md     — TDD cycle tracking, decisions, checklist, commit status
+└── work.log        — Append-only TDD evidence: repo state + test output per RED/GREEN cycle
 ```
