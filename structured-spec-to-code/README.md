@@ -12,17 +12,31 @@ A suite of AI agent skills that guide a project from rough idea through design, 
 | **plan-to-tasks** | Generate code task files from a plan step | No |
 | **interactive-coding-task** | Create code task files from ad-hoc descriptions (small changes) | Yes |
 | **task-to-code** | Implement a code task using TDD (Explore → Plan → Code → Commit) | No (escalates when blocked) |
+| **code-task-review** | Review the commit produced by a single `task-to-code` run; emit a structured YAML report | No |
+| **implementation-review** | Review the full implementation once all plan steps are complete; emit a YAML report and follow-on remediation `.code-task.md` files | No |
 | **structured-spec-to-code** | Meta skill: orchestrates the pipeline and determines current state | — |
 
 ## Pipeline
 
 ```
-Rough idea → interactive-design → design-to-plan → plan-to-tasks → task-to-code → committed code
-                                                                        ↑
-                              Small change → interactive-coding-task ────┘
+Rough idea → interactive-design → design-to-plan → plan-to-tasks → task-to-code → code-task-review → committed code
+                                                                        ↑              │
+                              Small change → interactive-coding-task ────┘              │
+                                                                                        ▼
+                                                                          (report consumed by orchestrator;
+                                                                           remediation re-enters task-to-code)
+
+                            ↳ once all plan steps are complete: implementation-review
+                                                                        │
+                                                                        ▼
+                                          (generates remediation tasks → re-enters plan-to-tasks → task-to-code)
 ```
 
 For brownfield projects, run **codebase-summary** first to give the design phase an understanding of the existing system.
+
+`code-task-review` runs after each `task-to-code` commit with clean context (cheap-model territory). Its YAML report (schema in `code-task-review/report-schema.md`) carries severity-labeled findings; the orchestrator decides whether to feed remediation back to `task-to-code` or accept the task.
+
+`implementation-review` runs once after all plan steps are complete, also with clean context but with a more capable model. It looks across the whole implementation for architectural drift, duplication, undesirable dependencies, and doc/code divergence — issues no per-task review could catch. It emits a YAML report (schema in `implementation-review/report-schema.md`) and generates follow-on `.code-task.md` files in a new step folder, appending a corresponding step to `plan.md`. Those tasks then flow through the existing `task-to-code` loop.
 
 ## Directory Conventions
 
@@ -49,7 +63,9 @@ The base directory defaults to `.agents/` and is configurable via the `agents_di
         └── task-01-*/
             ├── context.md
             ├── plan.md
-            └── progress.md
+            ├── progress.md
+            ├── work.log               #   TDD evidence (RED/GREEN per cycle)
+            └── review.yaml            #   from code-task-review
 ```
 
 ## Origin

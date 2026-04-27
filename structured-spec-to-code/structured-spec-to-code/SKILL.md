@@ -13,9 +13,13 @@ graph TD
     B -->|design document| C[design-to-plan]
     C -->|implementation plan| D[plan-to-tasks]
     D -->|code task files| E[task-to-code]
-    E -->|committed code| F{More steps?}
+    E -->|commit| R1[code-task-review]
+    R1 -->|approved| F{More steps?}
+    R1 -->|changes_requested / blocked| E
     F -->|yes| D
-    F -->|no| G[Done]
+    F -->|no| R2[implementation-review]
+    R2 -->|clean| G[Done]
+    R2 -->|remediation_recommended / required| D
 
     H[codebase-summary] -.->|informs| B
     I[Small change] --> J[interactive-coding-task]
@@ -24,6 +28,8 @@ graph TD
 
 - **codebase-summary** — Analyze an existing codebase. Run before interactive-design for brownfield projects, or anytime the summary is stale
 - **interactive-coding-task** — Shortcut for small, well-scoped changes that skip design/plan. Feeds directly into task-to-code
+- **code-task-review** — Runs after each `task-to-code` commit with clean context. Single-pass, cheap-model. Report at `{scratchpad}/review.yaml`
+- **implementation-review** — Runs once when all plan steps are complete. Wider scope, opus-class model. Generates remediation `.code-task.md` files that re-enter the loop
 
 ## Parameters
 
@@ -40,7 +46,11 @@ Check for existing artifacts to determine where the user is in the pipeline:
 | `{project_dir}/design/detailed-design.md` exists but no `implementation/plan.md` | Design complete, no plan yet | design-to-plan |
 | `{project_dir}/implementation/plan.md` exists with unchecked items | Plan exists, tasks not yet generated for next step | plan-to-tasks |
 | `{agents_dir}/tasks/{project_name}/step{NN}/` contains `.code-task.md` files | Tasks generated, ready to implement | task-to-code |
-| All plan checklist items complete | Pipeline complete for this project | Done — suggest review or next iteration |
+| `task-to-code` just committed and `{scratchpad}/review.yaml` does not exist for that task | Task implemented, not yet reviewed | code-task-review |
+| `{scratchpad}/review.yaml` has `verdict: changes_requested` or `verdict: blocked` | Review surfaced issues to address | task-to-code (in remediation mode, addressing the findings) |
+| All plan checklist items complete and `{project_dir}/implementation/review.yaml` does not exist | Implementation complete, not yet reviewed at the project scope | implementation-review |
+| `{project_dir}/implementation/review.yaml` has `verdict: remediation_recommended` or `remediation_required` and the generated remediation step is unchecked | Implementation reviewed, remediation tasks queued | task-to-code (on the new remediation step's tasks) |
+| All plan checklist items complete and `{project_dir}/implementation/review.yaml` has `verdict: clean` | Pipeline complete for this project | Done — suggest next iteration |
 
 ## Typical Flow
 
@@ -50,8 +60,9 @@ Check for existing artifacts to determine where the user is in the pipeline:
 4. Run **design-to-plan** → produces `{project_dir}/implementation/plan.md`
 5. For each step in the plan:
    a. Run **plan-to-tasks** → produces `{agents_dir}/tasks/{project_name}/step{NN}/` with code task files
-   b. Run **task-to-code** on each task file in sequence → produces committed code
+   b. For each task file: run **task-to-code** → committed code → **code-task-review** → if `changes_requested`/`blocked`, re-enter `task-to-code` to address findings, then re-review
 6. Repeat 5a-5b until all plan steps are complete
+7. Run **implementation-review** → if remediation is needed, the skill writes new task files and a new step into the plan; resume from step 5b for that step. If `clean`, the project is done
 
 ## Shortcut Flow (Small Changes)
 
