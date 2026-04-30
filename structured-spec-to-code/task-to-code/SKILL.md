@@ -181,36 +181,39 @@ schema_version: 1
 
 **Note: human-driven invocations.** When a human invokes this skill directly (outside an orchestrator context), writing `result.yaml` and emitting the inline metadata block are non-disruptive — they produce a useful artifact and a visible completion signal. Both behaviors MUST be preserved across future edits to this skill; removing either would silently break orchestrator-driven workflows.
 
-### 7. Rework Lifecycle
+### 7. Rework Round
 
-When a follow-up turn arrives in the **same session** carrying the reviewer's `review.yaml`, re-enter the implementation cycle to address every identified finding.
+When invoked for a **rework round** — a fresh session whose kickoff prompt indicates the prior implementation needs revision and names the on-disk paths to the prior `result.yaml` and the reviewer's `review.yaml` — re-enter the implementation cycle to address every identified finding.
 
-#### 7.1 Recognizing a Rework Turn
+Each rework round runs in a **fresh session**: prior context is reloaded from on-disk artifacts, not carried over in conversation history. This keeps state management simple, makes recovery from crashes straightforward (just restart the round), and avoids prompt-cache expiry costs that would accrue over long-lived sessions where the other agent's turn typically takes longer than the cache TTL.
+
+#### 7.1 Recognizing a Rework Round
 
 **Constraints:**
-- You MUST recognize a rework turn by the presence of a content block with MIME type `application/yaml` whose body conforms to the schema in `code-task-review/report-schema.md` (sibling skill in this repo). The surrounding `TextBlock` framing prose is informative; the YAML block is authoritative.
-- If no such block is present in the follow-up turn, treat the turn as a continuation of normal conversation rather than a structured rework signal.
+- You MUST recognize a rework round by the kickoff prompt: it explicitly identifies the invocation as rework round N and names the filesystem paths to the prior `result.yaml` and `review.yaml`. Both files are conventionally located in the task's scratchpad.
+- If the kickoff names these paths, you MUST read both files in full before doing any work. The `review.yaml` conforms to the schema in `code-task-review/report-schema.md` (sibling skill in this repo); the `result.yaml` conforms to the schema in `result-schema.md` (sibling file).
+- If neither file is named (or the named files are missing), treat the invocation as an initial implementation round per Steps 1–6.
 
 #### 7.2 Addressing Findings
 
 **Constraints:**
-- You MUST parse the incoming `review.yaml` and enumerate every finding with severity `critical` or `important`, plus every acceptance criterion whose `status` is `fail`, `partial`, or `not_verified`.
+- You MUST parse the prior `review.yaml` and enumerate every finding with severity `critical` or `important`, plus every acceptance criterion whose `status` is `fail`, `partial`, or `not_verified`.
 - You MUST address every enumerated item. For each change made, cite in `progress.md` which finding or AC it addresses.
 - Re-enter Step 4 (Code) to address findings. If the findings imply a planning rethink (e.g., the approach in `plan.md` requires revision), re-enter Step 3 (Plan) first.
 - You MUST update `work.log` with RED→GREEN cycles for any new or modified tests, following the Step 4.1 conventions.
-- You MUST produce a **fresh commit** for the rework changes. You MUST NOT amend the prior commit (`--amend` is forbidden for rework cycles). Follow the existing Step 5 commit conventions; the only delta is this no-amend invariant.
+- You MUST produce a **fresh commit** for the rework changes. You MUST NOT amend the prior commit (`--amend` is forbidden for rework rounds). Follow the existing Step 5 commit conventions; the only delta is this no-amend invariant.
 
 **Note on VCS conventions.** The fresh-commit-no-amend rule is specific to GitHub-style flat-history workflows (jj/git). Alternative VCS workflows — Gerrit-style amend-and-resubmit, stacked-commit conventions — would prefer different rules. Those workflows are out of scope for the current skill version and tracked as a v0.2 follow-up. Future maintainers integrating non-flat-history VCS workflows MUST extend this section rather than silently relaxing the no-amend rule.
 
 #### 7.3 Re-emitting Results
 
 After producing the fresh commit, re-emit the structured result per Step 6:
-- You MUST overwrite `{scratchpad}/result.yaml` with the new commit revision in `result.commit`, refreshed `acceptance_criteria` evidence reflecting the rework, and an updated `notes` paragraph describing what changed between cycles.
-- You MUST close the turn with a fresh `spec-workflow-meta` block per Step 6's contract — same keys, same trailing-content invariant. The `result_path` is unchanged; the orchestrator archives the prior cycle's copy before re-prompting.
+- You MUST overwrite `{scratchpad}/result.yaml` with the new commit revision in `result.commit`, refreshed `acceptance_criteria` evidence reflecting the rework, and an updated `notes` paragraph describing what changed between rounds.
+- You MUST close the turn with a fresh `spec-workflow-meta` block per Step 6's contract — same keys, same trailing-content invariant. The `result_path` is unchanged; the orchestrator archives the prior round's copy before launching the next round.
 
 #### 7.4 Escalation During Rework
 
-If you cannot address a `critical` finding — for example, the finding contradicts the task's stated intent, or fixing it requires design changes outside your scope — you MUST escalate per the Escalation Policy. Emit `result.yaml` with `status: escalated` and the `escalation` block populated. Do NOT silently approve a finding you cannot fix, and do NOT strip findings from the next turn's evidence.
+If you cannot address a `critical` finding — for example, the finding contradicts the task's stated intent, or fixing it requires design changes outside your scope — you MUST escalate per the Escalation Policy. Emit `result.yaml` with `status: escalated` and the `escalation` block populated. Do NOT silently approve a finding you cannot fix, and do NOT strip findings from the rework round's evidence.
 
 ## Examples
 

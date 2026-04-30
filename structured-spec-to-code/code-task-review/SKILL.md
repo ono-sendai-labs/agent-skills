@@ -1,6 +1,6 @@
 ---
 name: code-task-review
-description: Review commits produced by `task-to-code`, supporting both standalone single-turn reviews and multi-turn re-review sessions where the reviewer validates that prior findings were addressed. Verifies acceptance-criteria coverage, test integrity (incl. detection of deleted/weakened tests), code style and LSP cleanliness on touched files, and security. Produces a structured YAML report that an orchestrator can use to route remediation back to the implementer.
+description: Review commits produced by `task-to-code`. Supports initial reviews and re-reviews — a re-review is a fresh invocation that reads the prior review from disk and validates that its findings were addressed in the new commit. Verifies acceptance-criteria coverage, test integrity (incl. detection of deleted/weakened tests), code style and LSP cleanliness on touched files, and security. Produces a structured YAML report that an orchestrator can use to route remediation back to the implementer.
 ---
 
 # Code Task Review
@@ -9,11 +9,15 @@ description: Review commits produced by `task-to-code`, supporting both standalo
 
 Review the commit that completes a code task. The reviewer reads the task file, the scratchpad evidence (especially `work.log`), the commit diff, and the touched files, then produces a structured YAML report at a known path.
 
-The skill is **multi-turn-capable**: the first invocation in a session is an **initial review** of the commit that completed the task; subsequent invocations in the same session are **re-reviews** of a fresh commit produced by the implementer in response to the prior review. A re-review focuses on validating that prior `critical`/`important` findings and prior non-`pass` acceptance criteria have been addressed, surfaces regressions, and produces a fresh self-contained report on the current commit. An external orchestrator drives the multi-turn lifecycle; the skill handles both initial and re-review turns without additional configuration.
+The skill supports **two modes of invocation** with the same Steps below:
+- **Initial review** — first review of a fresh commit. No prior report exists at `{report_path}`.
+- **Re-review** — review of a rework commit produced in response to a prior review. The kickoff prompt indicates this is a re-review; a prior report exists at `{report_path}` and is read from disk before forming new judgements. A re-review focuses on validating that prior `critical`/`important` findings and prior non-`pass` acceptance criteria have been addressed, surfaces regressions, and produces a fresh self-contained report on the current commit.
+
+Each invocation runs in its own session; prior context is reloaded from the on-disk `review.yaml` rather than carried in conversation history. This keeps state management simple, makes recovery from crashes straightforward (just restart the re-review), and avoids prompt-cache expiry costs that would accrue across the implementer's intervening rework round.
 
 The report format is defined in `report-schema.md` (sibling file). Findings carry a severity (`critical` / `important` / `suggestion` / `nit`), a category, and a file/line reference, so the same report can drive an interactive fix loop, PR-comment generation, or human-readable summary without further parsing. An external orchestrator decides what to do with findings.
 
-**Note: human-driven invocations.** A single-turn session (human invoking the skill once) is fully supported and produces a valid `review.yaml` and a trailing `spec-workflow-meta` block with no re-review-specific behavior triggered unless a prior report exists at `{report_path}` and the prompt directs a re-review. The multi-turn capability MUST remain non-disruptive for standalone human invocations across future edits to this skill.
+**Note: human-driven invocations.** A single ad-hoc invocation (human running the skill once on a commit) is fully supported and produces a valid `review.yaml` and a trailing `spec-workflow-meta` block. Re-review behavior is triggered only when both a prior report exists at `{report_path}` and the prompt directs a re-review. The re-review capability MUST remain non-disruptive for standalone human invocations across future edits to this skill.
 
 ## Parameters
 
@@ -21,7 +25,7 @@ The report format is defined in `report-schema.md` (sibling file). Findings carr
 - **task** (required): Path to the `.code-task.md` file that was implemented
 - **commit** (optional): Revision identifier of the commit under review. If omitted, you MUST read it from the task's `progress.md` (recorded by `task-to-code` after committing)
 - **scratchpad_dir** (optional): Base directory for scratchpads. Defaults to `{agents_dir}/scratchpad/`. The task's scratchpad is derived by mirroring the task file's path under `tasks/`, identical to the rule used by `task-to-code`
-- **report_path** (optional): Where to write the YAML report. Defaults to `{scratchpad}/review.yaml`. On a re-review turn, the prior report at this path SHOULD be read before forming new judgements.
+- **report_path** (optional): Where to write the YAML report. Defaults to `{scratchpad}/review.yaml`. On a re-review round, the prior report at this path MUST be read before forming new judgements.
 
 **Constraints for parameter acquisition:**
 - You MUST ask for all parameters upfront in a single prompt
@@ -30,7 +34,7 @@ The report format is defined in `report-schema.md` (sibling file). Findings carr
 
 ## Escalation Policy
 
-This skill does not block on findings — findings go in the report. This holds for both initial and re-review turns. Escalate to the user ONLY when:
+This skill does not block on findings — findings go in the report. This holds for both initial and re-review rounds. Escalate to the user ONLY when:
 - The commit revision cannot be resolved
 - The task file or scratchpad is missing or malformed in a way that prevents review
 - The commit cannot be inspected (VCS errors, missing parent, etc.)
@@ -54,20 +58,20 @@ Read everything needed for review before forming any judgement.
 - You MUST list every file touched by the commit and read each one in its post-commit state
 - You SHOULD read referenced design documents only when an acceptance criterion or finding genuinely requires them — not by default
 - You MUST NOT read prior commits or unrelated parts of the codebase unless a specific finding demands it
-- **On a re-review turn:** you SHOULD read the prior report at `{report_path}` before forming new judgements. The prior report is the canonical schema-shaped record of the previous cycle's findings and AC statuses; use it to focus the re-review on verifying resolution of prior `critical`/`important` findings and non-`pass` acceptance criteria.
+- **On a re-review round:** you SHOULD read the prior report at `{report_path}` before forming new judgements. The prior report is the canonical schema-shaped record of the previous cycle's findings and AC statuses; use it to focus the re-review on verifying resolution of prior `critical`/`important` findings and non-`pass` acceptance criteria.
 
-### Re-review Turn Behavior
+### Re-review Round Behavior
 
-When this is not the first invocation in the session (i.e., a prior report exists at `{report_path}` from a previous turn and the prompt indicates a re-review), the following constraints apply in addition to the standard steps.
+When the kickoff prompt indicates a re-review and a prior report exists at `{report_path}`, the following constraints apply in addition to the standard steps.
 
 **Constraints:**
-- You SHOULD read the prior `{report_path}` before forming judgements (per Step 1). The file is the canonical schema-shaped record; the session's conversation history is secondary.
+- You MUST read the prior `{report_path}` before forming judgements (per Step 1). The file is the canonical schema-shaped record of the previous round; it is the only carrier of prior-round context across the session boundary.
 - You MUST focus the review on validating that every `critical`/`important` finding from the prior report has been addressed in the new commit. For each prior finding, cite the specific code or test change (file:line) that resolves it.
 - You MUST focus on validating that every prior acceptance criterion whose status was `fail`, `partial`, or `not_verified` is now `pass` (or explain why it remains non-passing).
-- You MUST surface any regressions introduced by the rework — for example, newly deleted tests, new style or security issues introduced while fixing prior ones. Regressions are findings in their own right and are not excused by the prior cycle.
+- You MUST surface any regressions introduced by the rework — for example, newly deleted tests, new style or security issues introduced while fixing prior ones. Regressions are findings in their own right and are not excused by the prior round.
 - You MUST overwrite `{report_path}` with a fresh, self-contained report on the **current** commit, conforming in full to `report-schema.md`. The report is not a delta — it covers the current commit completely, with prior-finding resolution reflected in the `summary` and `evidence` fields.
 - You SHOULD reflect prior-finding resolution in the prose `summary` field (e.g., "All three prior findings resolved at commit X; one new style suggestion in models.py introduced during the rework.").
-- You SHOULD NOT redo a full from-scratch review if the rework was narrow in scope. Focus effort where the rework touched the code; resurface prior-cycle concerns only if they remain unaddressed.
+- You SHOULD NOT redo a full from-scratch review if the rework was narrow in scope. Focus effort where the rework touched the code; resurface prior-round concerns only if they remain unaddressed.
 
 ### 2. Discover Ecosystem-Specific Reviewers
 
@@ -96,7 +100,7 @@ Before assessing production code, evaluate the test changes. This ordering avoid
   - If a test removal is not explained in `progress.md`, it is a `critical` finding by default
 - You MUST verify that each acceptance criterion has at least one test scenario that exercises it; missing test coverage is at minimum an `important` finding
 - You SHOULD evaluate test quality: meaningful assertions, edge cases, error paths — but lower-severity unless tied to an unmet criterion
-- **On a re-review turn:** pay particular attention to whether prior test-related findings have been addressed; surface any regressions in test coverage introduced by the rework as new findings
+- **On a re-review round:** pay particular attention to whether prior test-related findings have been addressed; surface any regressions in test coverage introduced by the rework as new findings
 
 ### 4. Verify Acceptance Criteria
 
@@ -109,7 +113,7 @@ For every acceptance criterion in the task file, determine whether the committed
 - A criterion is `pass` only if both the implementation and a test cover it; implementation without a test is at most `partial`
 - A criterion that cannot be evaluated from the available artifacts is `not_verified` — do not guess
 - Each non-`pass` criterion MUST have a corresponding finding in the `findings` list, severity `critical` or `important` depending on whether it blocks task completion
-- **On a re-review turn:** for each criterion that was non-`pass` in the prior report, you MUST explicitly state in `evidence` whether and how it has been addressed in the new commit, citing the specific change
+- **On a re-review round:** for each criterion that was non-`pass` in the prior report, you MUST explicitly state in `evidence` whether and how it has been addressed in the new commit, citing the specific change
 
 ### 5. Style and LSP Cleanliness
 
@@ -247,7 +251,7 @@ If `work.log` claims a test exists but the diff shows it removed (or vice versa)
 
 ```
 {scratchpad}/
-└── review.yaml      — Structured review report (schema in report-schema.md); overwritten on every turn (initial or re-review)
+└── review.yaml      — Structured review report (schema in report-schema.md); overwritten on every invocation (initial or re-review)
 ```
 
-The skill writes one file. It does not modify the task file, the commit, or any other scratchpad artifact. On each turn, `{report_path}` is overwritten with a fresh, self-contained report on the current commit; the orchestrator archives the prior cycle's copy before allowing the next cycle to start.
+The skill writes one file. It does not modify the task file, the commit, or any other scratchpad artifact. On each invocation, `{report_path}` is overwritten with a fresh, self-contained report on the current commit; the orchestrator archives the prior round's copy before launching the next round.
