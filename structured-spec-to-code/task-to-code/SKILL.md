@@ -157,6 +157,61 @@ Create a conventional commit for the completed implementation.
 - You MUST verify all checklist items are marked complete before committing
 - After committing, if the task originates from a plan (i.e., it lives under a `step{NN}/` directory within `{agents_dir}/tasks/`), you MUST check whether all tasks in that step directory are now complete (all have a corresponding commit documented in their scratchpad's progress.md). If so, you MUST mark the corresponding checklist item in the implementation plan as complete (change `- [ ]` to `- [x]`)
 
+### 6. Emit Structured Result
+
+After committing, write a canonical `result.yaml` to the scratchpad and close the conversation with a fenced completion-metadata block.
+
+**Constraints:**
+- You MUST write `{scratchpad}/result.yaml` conforming to the schema in `result-schema.md` (sibling file). Required fields: `result.task_file`, `result.commit`, `result.status`, `result.schema_version: 1`, `result.produced_at` as ISO 8601 UTC; `acceptance_criteria` list with `text`/`addressed`/`evidence` per criterion; `artifacts.scratchpad_dir` and `artifacts.files`; `escalation` block iff `status == escalated`; `failure` block iff `status == failed`; `notes` always present. The authoritative field definitions, status semantics, and examples are in `result-schema.md`.
+- You MUST set `result.status` as follows:
+  - `completed` — implementation done, tests pass, fresh commit produced; `result.commit` populated with the commit revision identifier
+  - `escalated` — you escalated to the user per the Escalation Policy; `escalation` block populated with `reason` and `details`
+  - `failed` — you attempted but cannot produce a working commit; `failure` block populated with `category` and `details`
+- You MUST populate `acceptance_criteria` with one entry per criterion in the task file, setting `addressed: yes | partial | no` and citing specific evidence (file:line references, test names) in `evidence`.
+- You MUST include a `notes` field (always present) with a 2–4 sentence prose summary of the iteration.
+- After writing `result.yaml`, you MUST close the conversation with a fenced block whose info string is exactly `spec-workflow-meta` (not bare `yaml`) carrying the keys `status`, `result_path`, and `schema_version`. This block MUST be the **final non-whitespace content of the turn** — no prose or other content may follow the closing fence. The format and parser rules are in `result-schema.md`.
+
+**Example closing block:**
+
+```spec-workflow-meta
+status: completed
+result_path: .agents/scratchpad/feat-templates-task-01/result.yaml
+schema_version: 1
+```
+
+**Note: human-driven invocations.** When a human invokes this skill directly (outside an orchestrator context), writing `result.yaml` and emitting the inline metadata block are non-disruptive — they produce a useful artifact and a visible completion signal. Both behaviors MUST be preserved across future edits to this skill; removing either would silently break orchestrator-driven workflows.
+
+### 7. Rework Lifecycle
+
+When a follow-up turn arrives in the **same session** carrying the reviewer's `review.yaml`, re-enter the implementation cycle to address every identified finding.
+
+#### 7.1 Recognizing a Rework Turn
+
+**Constraints:**
+- You MUST recognize a rework turn by the presence of a content block with MIME type `application/yaml` whose body conforms to the schema in `code-task-review/report-schema.md` (sibling skill in this repo). The surrounding `TextBlock` framing prose is informative; the YAML block is authoritative.
+- If no such block is present in the follow-up turn, treat the turn as a continuation of normal conversation rather than a structured rework signal.
+
+#### 7.2 Addressing Findings
+
+**Constraints:**
+- You MUST parse the incoming `review.yaml` and enumerate every finding with severity `critical` or `important`, plus every acceptance criterion whose `status` is `fail`, `partial`, or `not_verified`.
+- You MUST address every enumerated item. For each change made, cite in `progress.md` which finding or AC it addresses.
+- Re-enter Step 4 (Code) to address findings. If the findings imply a planning rethink (e.g., the approach in `plan.md` requires revision), re-enter Step 3 (Plan) first.
+- You MUST update `work.log` with RED→GREEN cycles for any new or modified tests, following the Step 4.1 conventions.
+- You MUST produce a **fresh commit** for the rework changes. You MUST NOT amend the prior commit (`--amend` is forbidden for rework cycles). Follow the existing Step 5 commit conventions; the only delta is this no-amend invariant.
+
+**Note on VCS conventions.** The fresh-commit-no-amend rule is specific to GitHub-style flat-history workflows (jj/git). Alternative VCS workflows — Gerrit-style amend-and-resubmit, stacked-commit conventions — would prefer different rules. Those workflows are out of scope for the current skill version and tracked as a v0.2 follow-up. Future maintainers integrating non-flat-history VCS workflows MUST extend this section rather than silently relaxing the no-amend rule.
+
+#### 7.3 Re-emitting Results
+
+After producing the fresh commit, re-emit the structured result per Step 6:
+- You MUST overwrite `{scratchpad}/result.yaml` with the new commit revision in `result.commit`, refreshed `acceptance_criteria` evidence reflecting the rework, and an updated `notes` paragraph describing what changed between cycles.
+- You MUST close the turn with a fresh `spec-workflow-meta` block per Step 6's contract — same keys, same trailing-content invariant. The `result_path` is unchanged; the orchestrator archives the prior cycle's copy before re-prompting.
+
+#### 7.4 Escalation During Rework
+
+If you cannot address a `critical` finding — for example, the finding contradicts the task's stated intent, or fixing it requires design changes outside your scope — you MUST escalate per the Escalation Policy. Emit `result.yaml` with `status: escalated` and the `escalation` block populated. Do NOT silently approve a finding you cannot fix, and do NOT strip findings from the next turn's evidence.
+
 ## Examples
 
 ### Example Input
@@ -209,5 +264,6 @@ If the implementation encounters unexpected challenges:
 ├── context.md      — Requirements, patterns, dependencies, implementation paths
 ├── plan.md         — Test scenarios and implementation plan
 ├── progress.md     — TDD cycle tracking, decisions, checklist, commit status
-└── work.log        — Append-only TDD evidence: repo state + test output per RED/GREEN cycle
+├── work.log        — Append-only TDD evidence: repo state + test output per RED/GREEN cycle
+└── result.yaml     — Structured implementation result (schema in result-schema.md)
 ```

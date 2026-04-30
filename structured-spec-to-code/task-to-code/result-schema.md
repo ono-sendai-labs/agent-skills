@@ -1,0 +1,223 @@
+# Task-to-Code — Result Schema (v1)
+
+The `task-to-code` skill emits two artifacts at the end of every turn: a `result.yaml` file written to the scratchpad, and a `spec-workflow-meta` fenced block as the final content of the turn. Both are documented here. The format is structured for programmatic consumption by orchestrators and readable by developers inspecting the scratchpad directly.
+
+## `result.yaml` — Top-level structure
+
+```yaml
+result:               # required — metadata about the implementation run
+  ...
+acceptance_criteria:  # required — one entry per criterion in the task file
+  - ...
+artifacts:            # required — scratchpad location and file list
+  ...
+escalation:           # present only when status == escalated
+  ...
+failure:              # present only when status == failed
+  ...
+notes: |              # required — prose summary of the iteration
+  ...
+```
+
+## `result` block
+
+```yaml
+result:
+  task_file: .agents/tasks/template-feature/step02/task-01-create-data-models.code-task.md
+  commit: abc123def             # jj change ID or git SHA; null if status != completed
+  status: completed             # completed | escalated | failed
+  schema_version: 1
+  produced_at: 2026-04-28T15:01:23Z   # ISO 8601, UTC
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `task_file` | yes | Path to the `.code-task.md` implemented, relative to the repo root |
+| `commit` | yes | Revision identifier; `null` if `status` is not `completed` |
+| `status` | yes | One of `completed`, `escalated`, `failed`. See status semantics below |
+| `schema_version` | yes | Currently `1`. Bump when the schema breaks compatibility |
+| `produced_at` | yes | UTC timestamp in ISO 8601 |
+
+### Status semantics
+
+| Status | Meaning | `commit` field | Conditional blocks |
+|---|---|---|---|
+| `completed` | Implementation done, tests pass, fresh commit produced | populated | none |
+| `escalated` | Agent escalated to the user; could not proceed autonomously | may be `null` | `escalation` block required |
+| `failed` | Agent attempted but cannot produce a working commit | may be `null` | `failure` block required |
+
+## `acceptance_criteria`
+
+One entry per criterion in the task file, in the same order. The `text` field preserves the criterion verbatim so an orchestrator can match it back to the task file.
+
+```yaml
+acceptance_criteria:
+  - text: "Templates can be created with a name and description"
+    addressed: yes              # yes | partial | no
+    evidence: |
+      tests/models_test.py:14-28 covers creation with both fields; test runs green.
+  - text: "Field validation rejects empty names"
+    addressed: partial
+    evidence: |
+      Implementation in src/models.py:91 raises ValueError on empty name.
+      Happy-path test exists but no test for the rejection case was added.
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `text` | yes | Verbatim criterion text from the task file |
+| `addressed` | yes | `yes` — implementation and at least one test cover it; `partial` — implementation present but test coverage is incomplete; `no` — criterion not met or not implemented |
+| `evidence` | yes | File:line references to implementation and test code that support the `addressed` value |
+
+## `artifacts`
+
+Records the scratchpad location and the files produced during the task.
+
+```yaml
+artifacts:
+  scratchpad_dir: .agents/scratchpad/template-feature/step02/task-01-create-data-models/
+  files:
+    - context.md
+    - plan.md
+    - progress.md
+    - work.log
+    - result.yaml
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `scratchpad_dir` | yes | Path to the task scratchpad directory, relative to the repo root |
+| `files` | yes | List of files present in the scratchpad at the time `result.yaml` is written |
+
+## `escalation` block
+
+Present only when `status == escalated`.
+
+```yaml
+escalation:
+  reason: ambiguous_requirement     # short tag, e.g. ambiguous_requirement | blocked_dependency | design_conflict
+  details: |
+    Multi-line prose explanation aimed at the user: what the blocker is,
+    what was tried, and what decision is needed to proceed.
+```
+
+## `failure` block
+
+Present only when `status == failed`.
+
+```yaml
+failure:
+  category: test                    # build | test | other
+  details: |
+    What broke, what was tried, and why recovery was not possible.
+```
+
+## `notes`
+
+Always present. A 2–4 sentence prose summary of the iteration.
+
+```yaml
+notes: |
+  Implemented the Template and Field models with full validation. All
+  acceptance criteria are covered by passing tests; work.log shows clean
+  RED→GREEN cycles for each. Commit abc123def.
+```
+
+## `spec-workflow-meta` inline block
+
+After writing `result.yaml`, the skill closes the turn with a fenced block whose info string is exactly `spec-workflow-meta`. This block is a lightweight completion signal that lets an orchestrator locate the result file and detect the end of the turn without a separate round-trip.
+
+```
+spec-workflow-meta
+status: completed
+result_path: .agents/scratchpad/feat-templates-task-01/result.yaml
+schema_version: 1
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `status` | yes | Same value as `result.status` in the written file |
+| `result_path` | yes | Path to `result.yaml`, relative to the repo working directory |
+| `schema_version` | yes | Currently `1` |
+
+### Parser rules
+
+- Find the **last** fenced block in the turn whose info string is exactly `spec-workflow-meta` (not bare `yaml` or any other string). The custom info string distinguishes this block from the illustrative YAML the skill quotes earlier in the turn.
+- That block MUST appear at the trailing end of the turn — only whitespace may follow its closing fence. Any prose after the closing fence is a violation; parsers should treat the turn as malformed.
+- The body is parsed as YAML. The three fields above are required; unknown keys are ignored (forward-compatible).
+- `result_path` is resolved relative to the working directory; the file MUST exist and parse against this schema.
+- A successful inline-block parse is necessary but not sufficient: the canonical artifact is `result.yaml`. If the inline block parses but `result.yaml` does not, the turn is treated as malformed.
+
+These same rules apply to `spec-workflow-meta` blocks emitted by other skills in the structured-spec-to-code workflow (e.g., `code-task-review`), with `result_path` pointing at the respective output file.
+
+## Minimal example (completed)
+
+```yaml
+result:
+  task_file: .agents/tasks/template-feature/step02/task-01-create-data-models.code-task.md
+  commit: abc123def
+  status: completed
+  schema_version: 1
+  produced_at: 2026-04-28T15:01:23Z
+
+acceptance_criteria:
+  - text: "Templates can be created with a name and description"
+    addressed: yes
+    evidence: tests/models_test.py:14-28 covers creation with both fields.
+  - text: "Field validation rejects empty names"
+    addressed: yes
+    evidence: tests/models_test.py:42-55 asserts ValueError on empty name.
+
+artifacts:
+  scratchpad_dir: .agents/scratchpad/template-feature/step02/task-01-create-data-models/
+  files:
+    - context.md
+    - plan.md
+    - progress.md
+    - work.log
+    - result.yaml
+
+notes: |
+  Both acceptance criteria met with passing tests and clean TDD evidence
+  in work.log. The implementation follows existing ORM patterns. Commit abc123def.
+```
+
+## Minimal example (escalated)
+
+```yaml
+result:
+  task_file: .agents/tasks/template-feature/step02/task-02-add-validation.code-task.md
+  commit: null
+  status: escalated
+  schema_version: 1
+  produced_at: 2026-04-28T16:14:07Z
+
+acceptance_criteria:
+  - text: "Validation rejects inputs over 255 characters"
+    addressed: no
+    evidence: |
+      The task references a shared validation library that does not exist in
+      the codebase; cannot implement without a prerequisite.
+
+artifacts:
+  scratchpad_dir: .agents/scratchpad/template-feature/step02/task-02-add-validation/
+  files:
+    - context.md
+    - plan.md
+    - progress.md
+    - work.log
+    - result.yaml
+
+escalation:
+  reason: blocked_dependency
+  details: |
+    The task requires importing from `lib/validators`, which does not exist.
+    The design doc references it as a prerequisite that should have been
+    created in an earlier task. Please confirm whether task-01 was skipped
+    or whether the path has changed.
+
+notes: |
+  Implementation blocked by a missing prerequisite library. No commit was
+  produced. The escalation block describes the dependency and what is needed
+  to unblock.
+```
