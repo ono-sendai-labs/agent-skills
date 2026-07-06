@@ -40,8 +40,8 @@ Exit codes:
     )
     parser.add_argument(
         "--model",
-        default="gemini-2.5-flash",
-        help="Gemini model to use (default: gemini-2.5-flash)",
+        default="gemini-flash-latest",
+        help="Gemini model to use.",
     )
     args = parser.parse_args()
 
