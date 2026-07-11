@@ -98,7 +98,9 @@ Before assessing production code, evaluate the test changes. This ordering avoid
 - For each suspicious change, you MUST consult `progress.md` and `work.log` for justification:
   - `work.log` should contain a RED entry (failing test) followed by a GREEN entry (passing test) for each requirement; gaps are evidence the TDD cycle was skipped
   - If a test removal is not explained in `progress.md`, it is a `critical` finding by default
-- You MUST verify that each acceptance criterion has at least one test scenario that exercises it; missing test coverage is at minimum an `important` finding
+- You MUST verify that each **behavioral** acceptance criterion — one verifiable by executing code and asserting on observable output, state, or errors — has at least one test scenario that exercises it; missing test coverage for a behavioral criterion is at minimum an `important` finding
+- Some acceptance criteria are **non-behavioral** — documentation content or currency, presence/shape of configuration, file/directory structure, or prose quality — and have no runtime behavior to exercise. For these you MUST NOT require an automated test. Verify them by artifact inspection, and treat the implementer's cited inspection evidence (in `result.yaml`/`work.log`) or your own inspection as sufficient. **Requesting a mechanical test for a non-behavioral criterion is itself a review defect — do not do it.**
+- You MUST NOT request brittle tests, and you MUST NOT credit them as coverage. A brittle test pins incidental details (exact wording, formatting, ordering) rather than a contract or an observable behavior; the canonical anti-pattern is a **change-detector** that asserts a file contains literal strings copied from that same file. If the implementer added such a test, raise a `suggestion` to remove or narrow it. (Narrow exceptions that ARE legitimate and should not be flagged: asserting the absence of a specific deprecated/stale token, or the presence of a genuine contract string an external consumer copies verbatim — a public env-var name, CLI flag, or API identifier.)
 - You SHOULD evaluate test quality: meaningful assertions, edge cases, error paths — but lower-severity unless tied to an unmet criterion
 - **On a re-review round:** pay particular attention to whether prior test-related findings have been addressed; surface any regressions in test coverage introduced by the rework as new findings
 
@@ -110,7 +112,8 @@ For every acceptance criterion in the task file, determine whether the committed
 - You MUST produce one entry in `acceptance_criteria` per criterion in the task file, preserving the original criterion text
 - For each criterion, you MUST assign one of: `pass`, `fail`, `partial`, `not_verified`
 - You MUST cite specific evidence (file:line references to test cases or implementation) in the `evidence` field
-- A criterion is `pass` only if both the implementation and a test cover it; implementation without a test is at most `partial`
+- A **behavioral** criterion is `pass` only if both the implementation and a test cover it; implementation without a test is at most `partial`
+- A **non-behavioral** criterion (docs, config, structure, prose) is `pass` when the artifact demonstrably satisfies it and you can cite concrete inspection evidence (a file:line or quoted excerpt); it does NOT require an automated test, and the absence of a test is not grounds for `partial`
 - A criterion that cannot be evaluated from the available artifacts is `not_verified` — do not guess
 - Each non-`pass` criterion MUST have a corresponding finding in the `findings` list, severity `critical` or `important` depending on whether it blocks task completion
 - **On a re-review round:** for each criterion that was non-`pass` in the prior report, you MUST explicitly state in `evidence` whether and how it has been addressed in the new commit, citing the specific change

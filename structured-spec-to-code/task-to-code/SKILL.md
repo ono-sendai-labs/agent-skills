@@ -71,11 +71,24 @@ Design the test strategy and outline the implementation approach.
 
 #### 3.1 Test Strategy
 
+Not every acceptance criterion is behavioral, and not everything is best verified by a mechanical test. Before designing tests, classify each criterion:
+
+- **Behavioral / functional** — verifiable by executing code and asserting on observable output, state, or error paths. These MUST be covered by automated tests.
+- **Non-behavioral** — documentation content or currency, presence/shape of configuration, file/directory structure, prose quality, or any other property with no runtime behavior to exercise. These are verified by **artifact inspection** (Step 4.2), not by a mechanical test. Do not fabricate a test to manufacture "coverage" for them.
+
 **Constraints:**
-- You MUST cover all acceptance criteria with at least one test scenario
-- You MUST define explicit input/output pairs for each test case
-- You MUST design tests that will initially fail when run against non-existent implementations
-- You MUST save test scenarios to `{scratchpad}/plan.md`
+- You MUST classify each acceptance criterion as behavioral or non-behavioral and record the classification in `{scratchpad}/plan.md`
+- You MUST cover every **behavioral** acceptance criterion with at least one test scenario
+- You MUST define explicit input/output pairs for each behavioral test case
+- You MUST design behavioral tests that will initially fail when run against non-existent implementations
+- You MUST NOT write brittle tests (see "Avoid brittle tests" below)
+- You MUST save test scenarios and the criterion classification to `{scratchpad}/plan.md`
+
+**Avoid brittle tests.** A brittle test pins incidental details — exact wording, formatting, or ordering — instead of a contract or an observable behavior, so it fails on benign edits while catching no real defect. The canonical anti-pattern is a **change-detector**: asserting that a file (README, generated doc, config) contains literal strings copied from that same file. Do not write these; verify such properties by artifact inspection instead. Two narrow exceptions ARE legitimate, because each asserts something stable and externally meaningful rather than incidental prose:
+- Asserting the **absence** of a specific deprecated/stale token (e.g., an old env-var name or flag that must no longer appear).
+- Asserting the presence of a genuine **contract string** that an external consumer copies verbatim — a public env-var name, CLI flag, or API identifier — not the surrounding prose.
+
+When in doubt, prefer artifact inspection recorded in `work.log` over an assertion that merely restates the artifact.
 
 #### 3.2 Implementation Plan
 
@@ -134,7 +147,21 @@ For each requirement, in the order defined by the implementation plan:
 
 Then move to the next requirement. Update the implementation checklist in progress.md after each cycle.
 
-#### 4.2 Validate
+#### 4.2 Verify Non-Behavioral Criteria
+
+For each acceptance criterion classified as non-behavioral in Step 3.1, verify it by inspecting the artifact directly rather than by adding a test.
+
+**Constraints:**
+- You MUST inspect the relevant artifact (doc, config, directory layout) and confirm it satisfies the criterion
+- You MUST record the inspection in `{scratchpad}/work.log` with the criterion name, what you inspected, and the concrete evidence (file:line, a quoted excerpt, or a directory listing):
+  ```
+  echo >> {scratchpad}/work.log "## Criterion <name>: inspection - <what was checked>"
+  bash -x -c "<inspection command, e.g. sed -n / ls / a stale-token grep>" >> {scratchpad}/work.log 2>&1
+  ```
+- You MAY add a narrow, non-brittle guard where one is genuinely stable and valuable per the "Avoid brittle tests" rules in Step 3.1 (e.g., a stale-token absence check, or a contract-string presence check) — but inspection evidence alone is sufficient to satisfy a non-behavioral criterion
+- You MUST NOT add a change-detector test to manufacture "coverage" for a non-behavioral criterion
+
+#### 4.3 Validate
 
 **Constraints:**
 - You MUST execute all tests and verify they pass
@@ -167,7 +194,7 @@ After committing, write a canonical `result.yaml` to the scratchpad and close th
   - `completed` — implementation done, tests pass, fresh commit produced; `result.commit` populated with the commit revision identifier
   - `escalated` — you escalated to the user per the Escalation Policy; `escalation` block populated with `reason` and `details`
   - `failed` — you attempted but cannot produce a working commit; `failure` block populated with `category` and `details`
-- You MUST populate `acceptance_criteria` with one entry per criterion in the task file, setting `addressed: yes | partial | no` and citing specific evidence (file:line references, test names) in `evidence`.
+- You MUST populate `acceptance_criteria` with one entry per criterion in the task file, setting `addressed: yes | partial | no` and citing specific evidence in `evidence`. For behavioral criteria cite the test (file:line or test name) and implementation; for non-behavioral criteria cite the artifact-inspection evidence (a file:line or quoted excerpt) rather than a test name — a non-behavioral criterion is `addressed: yes` when the artifact demonstrably satisfies it, with no test required.
 - You MUST include a `notes` field (always present) with a 2–4 sentence prose summary of the iteration.
 - After writing `result.yaml`, you MUST close the conversation with a fenced block whose info string is exactly `spec-workflow-meta` (not bare `yaml`) carrying the keys `status`, `result_path`, and `schema_version`. This block MUST be the **final non-whitespace content of the turn** — no prose or other content may follow the closing fence. The format and parser rules are in `result-schema.md`.
 
