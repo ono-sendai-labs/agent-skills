@@ -69,8 +69,8 @@ acceptance_criteria:
 
 | Status | Meaning |
 |---|---|
-| `pass` | Implementation present **and** at least one test exercises this criterion |
-| `partial` | Implementation present but test coverage is incomplete (e.g., happy-path only when the criterion implies error handling) |
+| `pass` | For a **behavioral** criterion: implementation present **and** at least one test exercises it. For a **non-behavioral** criterion (docs, config, structure, prose): the artifact demonstrably satisfies it, verified by inspection with cited evidence — no test required |
+| `partial` | Implementation/artifact present but coverage is incomplete (e.g., a behavioral criterion tested happy-path only when it implies error handling). A non-behavioral criterion is not `partial` merely for lacking an automated test |
 | `fail` | Implementation does not satisfy the criterion, or no implementation exists |
 | `not_verified` | Cannot be evaluated from available artifacts. Use sparingly — prefer escalation if a criterion is genuinely unreviewable |
 
@@ -113,7 +113,7 @@ findings:
 | Severity | Meaning | Effect on verdict |
 |---|---|---|
 | `critical` | Blocks task completion. Examples: deleted tests without justification, security issue exploitable as written, an acceptance criterion entirely unmet, TDD evidence inconsistent with the commit | Forces `verdict: blocked` |
-| `important` | Should be fixed before the task is considered done. Examples: missing test for a criterion (`partial`), LSP errors in touched files, latent security risk | Forces at least `verdict: changes_requested` |
+| `important` | Should be fixed before the task is considered done. Examples: missing test for a **behavioral** criterion (`partial`), LSP errors in touched files, latent security risk. (Do NOT raise an `important` finding for a non-behavioral criterion merely lacking an automated test — verify it by inspection instead.) | Forces at least `verdict: changes_requested` |
 | `suggestion` | Improvement worth making but not blocking. Examples: refactoring opportunity, minor style drift | Does not change verdict |
 | `nit` | Trivial preference, not a real issue. Examples: comment phrasing, whitespace | Does not change verdict |
 

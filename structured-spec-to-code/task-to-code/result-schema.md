@@ -66,8 +66,8 @@ acceptance_criteria:
 | Field | Required | Notes |
 |---|---|---|
 | `text` | yes | Verbatim criterion text from the task file |
-| `addressed` | yes | `yes` — implementation and at least one test cover it; `partial` — implementation present but test coverage is incomplete; `no` — criterion not met or not implemented |
-| `evidence` | yes | File:line references to implementation and test code that support the `addressed` value |
+| `addressed` | yes | For a **behavioral** criterion: `yes` — implementation and at least one test cover it; `partial` — implementation present but test coverage is incomplete; `no` — criterion not met. For a **non-behavioral** criterion (docs, config, structure, prose): `yes` — the artifact demonstrably satisfies it, verified by inspection and no test is required; `partial` — partially satisfied; `no` — not satisfied |
+| `evidence` | yes | For behavioral criteria, file:line references to implementation and test code. For non-behavioral criteria, artifact-inspection evidence (a file:line or quoted excerpt) that supports the `addressed` value |
 
 ## `artifacts`
 
