@@ -33,7 +33,7 @@ result:
 | Field | Required | Notes |
 |---|---|---|
 | `task_file` | yes | Path to the `.code-task.md` implemented, relative to the repo root |
-| `change_id` | yes | Stable jj change ID matching `^[k-z]+$` when `status: completed`; `null` otherwise |
+| `change_id` | yes | Stable jj change ID matching `^[k-z]+$` when `status: completed`; it is the produced task change at `@-` after commit, never the empty working-copy `@`; `null` otherwise |
 | `status` | yes | One of `completed`, `escalated`, `failed`. See status semantics below |
 | `schema_version` | yes | Must be `2` for this producer artifact |
 | `produced_at` | yes | UTC timestamp in ISO 8601 |
@@ -42,7 +42,7 @@ result:
 
 | Status | Meaning | `change_id` field | Conditional blocks |
 |---|---|---|---|
-| `completed` | Implementation done, tests pass, and a fresh jj change with an empty `@` was produced | valid jj change ID | none |
+| `completed` | Implementation done, tests pass, and a fresh jj change with an empty `@` was produced; `change_id` identifies that produced change at `@-` | valid jj change ID | none |
 | `escalated` | Agent escalated to the user; could not proceed autonomously | `null` permitted | `escalation` block required |
 | `failed` | Agent attempted but cannot produce a working change | `null` permitted | `failure` block required |
 

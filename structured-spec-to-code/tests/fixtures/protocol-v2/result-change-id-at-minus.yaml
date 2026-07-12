@@ -1,0 +1,8 @@
+working_copy:
+  change_id: kmnopqrst
+  empty: true
+committed_change:
+  change_id: stuvwxyz
+  empty: false
+result:
+  change_id: stuvwxyz

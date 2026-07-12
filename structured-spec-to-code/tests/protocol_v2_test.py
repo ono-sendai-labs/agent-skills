@@ -36,6 +36,18 @@ class ProtocolV2FixturesTest(unittest.TestCase):
         self.assertNotIn("commit", result["result"])
         self.assertRegex(result["result"]["change_id"], CHANGE_ID)
 
+    def test_result_change_id_is_committed_parent_not_empty_working_copy(self):
+        state = load_fixture("result-change-id-at-minus.yaml")
+
+        self.assertRegex(state["working_copy"]["change_id"], CHANGE_ID)
+        self.assertRegex(state["committed_change"]["change_id"], CHANGE_ID)
+        self.assertEqual(
+            state["result"]["change_id"], state["committed_change"]["change_id"]
+        )
+        self.assertNotEqual(
+            state["result"]["change_id"], state["working_copy"]["change_id"]
+        )
+
     def test_all_review_verdicts_keep_v2_change_and_merge_request_content(self):
         expected = {"approved", "changes_requested", "blocked"}
         seen = set()
@@ -89,6 +101,9 @@ class ProtocolV2FixturesTest(unittest.TestCase):
         self.assertIn("jj commit -m", implementer)
         self.assertIn("detailed body", implementer)
         self.assertIn("empty working-copy `@`", implementer)
+        self.assertIn("probe the produced task change at `@-`", implementer)
+        self.assertIn("result.change_id` exactly to that stable `@-` change ID", implementer)
+        self.assertIn("jj log -r @-", implementer)
         self.assertIn("MUST NOT create or move bookmarks", implementer)
         self.assertIn("amend, squash, rewrite", implementer)
         self.assertIn("Repository inspection and mutation MUST use jj", implementer)
