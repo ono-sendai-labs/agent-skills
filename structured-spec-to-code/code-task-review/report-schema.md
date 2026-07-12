@@ -58,17 +58,17 @@ For a task under a plan, the title MUST end exactly with `[Enhancement Step NN/T
 
 The reviewer also emits the small YAML `spec-workflow-meta` locator with `schema_version: 1`. Its `status` describes successful report writing, so it MUST be `completed` for `approved`, `changes_requested`, and `blocked` reports; it does not mirror `review.verdict`. A complete fence may appear anywhere in the response, with prose before or after it; when multiple complete fences occur, the last complete fence is selected and an unterminated opening fence is ignored.
 
-~~~text
+~~~~text
 Review report written.
 
 ```spec-workflow-meta
 status: completed
 result_path: .agents/scratchpad/feat-task/review.yaml
 schema_version: 1
-~~~
+```
 
 Additional prose is permitted after the closing fence.
-~~~
+~~~~
 
 ## `summary`
 
