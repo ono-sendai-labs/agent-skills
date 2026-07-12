@@ -195,6 +195,6 @@ edit contracts independently.
   postcondition without labeling it and reviewing callers.
 - **Undeclared authority.** Reaching for the filesystem/network/clock without
   declaring it — it defeats the blast-radius guarantee and must surface as an
-  architectural change.
+  architectural and security-relevant change.
 - **Editing code before the contract changeset (Mode B).** The declarative diff
   is supposed to come first.

@@ -1,6 +1,6 @@
 ---
 name: coco-contract-testing
-description: Turn a component's contract into a test suite that provides evidence the implementation satisfies it, and build verified fakes for components that wrap stateful services (storage, RPCs). Use this during implementation of a coco component-contract codebase — when writing tests for a component whose behavior is specified by a contract, when a contract clause needs test evidence, or when a component needs an in-memory fake that must stay faithful to the real implementation. Plugs into the structured-spec-to-code implementation phase (task-to-code). Reach for this whenever contract clauses need to become tests or a fake must be proven to match the real thing.
+description: Turn a component's contract into a test suite that provides evidence the implementation satisfies it, and build verified fakes for components that wrap stateful services (storage, RPCs). Use this during implementation of a coco component-contract codebase — when writing tests for a component whose behavior is specified by a contract, when a contract clause needs test evidence, or when a component needs an in-memory fake that must stay faithful to the real implementation. Plugs into the structured-spec-to-code implementation phase (task-to-code). Reach for this whenever contract clauses need to become tests or a fake must be shown to match the real thing.
 ---
 
 # coco-contract-testing
@@ -13,8 +13,9 @@ it. This skill produces two kinds of evidence:
 1. **Contract tests** — tests that exercise each testable contract clause, so the
    informal (prose) contract is backed by executable checks.
 2. **Verified fakes** — for components that wrap stateful services, an in-memory
-   stand-in that is proven faithful by passing the *same* contract test suite as
-   the real implementation.
+   stand-in demonstrated faithful by passing the *same* contract test suite as
+   the real implementation. (Tests are evidence, not proof — see the note on
+   what "verified" can and cannot mean in Part 2.)
 
 **Before doing anything, read `../coco-references/concepts.md`** for the component
 model, the two contract tiers, and the contract algebra. This skill assumes that
@@ -114,12 +115,32 @@ components can use it with confidence. When the suite passes on the fake but fai
 on the real implementation (or vice versa), that gap *is* the drift the pattern
 exists to catch — resolve it before shipping.
 
+**What "verified" can and cannot mean.** A shared suite passing on both is strong
+evidence they agree, but tests are necessarily incomplete — passing is necessary,
+not sufficient. Where a contract clause resists exhaustive testing (a subtle
+ordering guarantee, a concurrency invariant), confirm by *review* that the fake
+matches the real behavior there too; do not treat a green suite as proof the fake
+is faithful in every respect the contract promises.
+
 ### 7. Record the fake in the contract
 
 Note in the Tier-2 contract file that the component has a verified fake, where it
 lives, and which shared suite verifies both. That tells depending components the
 fake exists and is trustworthy, and tells a reviewer where the fidelity evidence
 is.
+
+**Is the fake part of the interface?** It sits on the boundary: the contract
+*names* it (so in that sense it belongs to the component's public surface), yet
+it is test code that production callers must never instantiate. If the project's
+build system can mark it test-only (e.g. Bazel `testonly = 1`), that
+mechanically keeps production code from depending on it, and it is safe to list
+the fake among the component's designated interface files. Absent such a
+mechanism, do **not** add the fake to the production interface designation —
+keep it in test-only sources — but still record its existence and location in
+the Tier-2 contract so depending components can find it. Follow whatever the
+project's manifest convention says about test-only interface files; if it says
+nothing, treat the fake as test code and reference it from the contract rather
+than promoting it into the production interface.
 
 ---
 

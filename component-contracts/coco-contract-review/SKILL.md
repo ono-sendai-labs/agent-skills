@@ -1,6 +1,6 @@
 ---
 name: coco-contract-review
-description: Review a component's contract — or a proposed contract change — for consistency in a coco component-contract codebase. Checks two things: (1) that the implementation actually satisfies its own contract, and (2) compositional soundness — that the contracts of the components it depends on are strong enough to justify its own guarantees (its rely-set is met). Also reviews a contract changeset from an evolution ripple for correct strengthening/breaking classification and completeness. Use when reviewing a contract, a proposed contract, or a commit that touches contracts; plugs into the structured-spec-to-code review phase (code-task-review, implementation-review). Reach for this whenever component contracts need to be checked for internal or compositional consistency.
+description: Review a component's contract — or a proposed contract change — for consistency in a coco component-contract codebase. Checks both that the implementation actually satisfies its own contract, and that the contracts of the components it depends on are strong enough to justify its own guarantees (compositional soundness — its rely-set is met). Also reviews a contract changeset from an evolution ripple for correct strengthening/breaking classification and completeness. Use when reviewing a contract, a proposed contract, or a commit that touches contracts; plugs into the structured-spec-to-code review phase (code-task-review, implementation-review). Reach for this whenever component contracts need to be checked for internal or compositional consistency.
 ---
 
 # coco-contract-review
@@ -26,7 +26,7 @@ reasoning. This skill is the compositional check of §5 run **backward** (given
 the code/contract as written, is every rely met?), where `coco-component-design`
 runs it forward.
 
-## Relationship to structured-spec-to-code (SSTC) and the ARC tool
+## Relationship to structured-spec-to-code (SSTC) and the arcc tool
 
 This is the review-phase hook of the coco discipline. It composes with SSTC's
 `code-task-review` (per-commit) and `implementation-review` (whole-plan): those
@@ -35,7 +35,7 @@ contract-specific judgements below. When run inside an SSTC review, fold these
 findings into that review's report using its existing severity vocabulary rather
 than inventing a parallel report.
 
-This skill does **not** assume the ARC conformance tool is present. Where the
+This skill does **not** assume the `arcc` conformance tool is present. Where the
 tool exists, it mechanically enforces the *structural* facts (no calls into
 private implementation, declared-dependencies-only, interface = designated
 files); trust those results and spend review effort on the *behavioral*
@@ -69,9 +69,12 @@ assume dependencies honor *their* contracts (that is modular reasoning; dimensio
   postcondition on every path, including error paths? Flag any path that can
   return while violating a postcondition or invariant.
 - **Tier coherence.** Do Tier 1 (doc comments) and Tier 2 (contract file) agree?
-  Tier 1 must be a faithful *summary* of Tier 2 for callers — never promise in
-  Tier 1 something Tier 2 contradicts, and never let implementation detail leak
-  up into Tier 1.
+  Under the single-source model (concepts §3), each caller-facing clause is
+  stated authoritatively in Tier 1 and *referenced by label* from Tier 2 — so
+  flag any clause **restated verbatim** in both (a drift hazard), any Tier 2
+  label pointing at a Tier 1 clause that no longer exists, and any Tier 2
+  elaboration that contradicts the Tier 1 clause it hangs off. Never let
+  implementation detail leak up into Tier 1.
 - **Responsibility split.** Is each clause on the right side of the caller/
   component line? A "postcondition" that is really a demand on the caller is
   mislabeled and misleads reasoning.

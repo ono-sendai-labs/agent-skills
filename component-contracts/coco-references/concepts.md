@@ -22,42 +22,50 @@ review) that operate on them.
 
 ## 1. The component model
 
-The unit is the **component** (the C4 "component", enriched). A component is:
+The unit is the **component**: the "component" of the [C4 software architecture
+model](https://c4model.com/), enriched with an explicit contract, declared
+dependencies, and declared authority. A component is:
 
 - **A collection of code units exposing a well-defined interface.** The specific
   files holding that interface are **designated** somehow. Do **not** assume any
   particular tool or format: the designation might be a manifest/textproto, a
   Bazel rule, or simply a heading in the component's docs ("Interface files:
-  ..."). The coco skills read *whatever* designation exists; if none exists, the
-  first job is to establish one (even a prose list in `CONTRACT.md`).
-- **The owner of a private implementation** that nothing outside may call into.
+  ..."). The coco skills read *whatever* designation the project already uses;
+  **finding and following that convention is the first job** (see *Component
+  manifests and their schema* below). If you cannot determine the convention,
+  ask or escalate rather than inventing one.
+- **The owner of a private implementation** that nothing outside may call into —
+  even code that is technically public at the implementation-language level, if
+  it is not part of the designated interface.
 - **A declarer of its dependencies** — the *other components* it uses, named at
   component granularity, not file or symbol granularity.
 - **A declarer of its ambient authority** — the system powers (filesystem,
   network, clock, randomness…) it exercises. A component that declares *none* is
   self-sandboxed; treat that as the desirable default and flag any new authority
-  as an architectural change.
+  as an **architectural and security-relevant** change.
 
 **Component manifests and their schema.** Most projects adopt a single manifest
 format/schema, applied project-wide, that declares each component: which source
 files make up its interface, which additional file(s) hold its contract, its
-dependencies, and its authority. (In the ARC tool, for example, the manifest is
-a textproto that lists the interface source files and one or more further files
-that carry the contract.) **Assume the schema is given to you as a reference —
-do not invent one on the fly.** If the project has a manifest schema, read it and
-follow it; if it does not yet, establish the lightest designation that works and
-flag that a schema should be chosen, rather than improvising a format that later
-work would have to unpick.
+dependencies, and its authority. (In the `arcc` tool, for example, the manifest
+is a textproto that lists the interface source files and one or more further
+files that carry the contract.) **Assume the schema is given to you as a
+reference — do not invent one on the fly.** If the project has a manifest schema,
+read it and follow it. If it does not yet — and only after confirming none
+exists — establish the lightest designation that works and flag that a
+project-wide schema should be chosen; when in doubt, ask rather than improvise a
+format that later work would have to unpick.
 
 The **architecturally-visible interface** is exactly what the designated
 interface files expose. The contract attaches to *that* surface — never to
 private implementation details.
 
 > This model, and the rationale for it, is developed in
-> `architectural-contracts/docs/rationale-and-concepts.md` if available. The
-> coco skills work whether or not the ARC conformance tool is present; the tool
-> mechanically enforces the structure, but the design discipline stands on its
-> own.
+> [`architectural-contracts-rationale.md`](architectural-contracts-rationale.md)
+> (a snapshot, kept beside this file so the coco skills are self-contained). The
+> coco skills work whether or not the `arcc` conformance tool is present; the
+> tool mechanically enforces the structure, but the design discipline stands on
+> its own.
 
 ## 2. What a contract is
 
@@ -113,19 +121,30 @@ goes where, not about mandating a specific filename. Tier 2 holds:
 
 | Content | Tier 1 (doc comment) | Tier 2 (contract file) |
 |---|---|---|
-| Preconditions a caller must meet | ✅ | ✅ (may elaborate) |
-| Success postconditions | ✅ | ✅ |
-| Error outcomes that change caller behavior | ✅ | ✅ |
+| Preconditions a caller must meet | authoritative | ↳ by label (+ elaboration) |
+| Success postconditions | authoritative | ↳ by label |
+| Error outcomes that change caller behavior | authoritative | ↳ by label |
+| Key invariants, thread-safety | authoritative | ↳ by label |
 | Exhaustive failure / edge behavior | — | ✅ |
-| Key invariants, thread-safety | ✅ | ✅ |
 | Rely-set (depended-on guarantees) | — | ✅ |
 | Clause → test evidence map | — | ✅ |
 | Fake-fidelity notes | — | ✅ |
 | Declared dependencies & authority + rationale | — | ✅ |
 
-Rule of thumb: **if a caller needs it to call correctly, it is Tier 1. If only a
-maintainer or reviewer needs it, it is Tier 2.** When in doubt, prefer Tier 2 —
-keeping Tier 1 lean is the whole point.
+**Avoid drift: each clause has exactly one authoritative home.** A caller-facing
+clause stated in Tier 1 must *not* be re-stated verbatim in Tier 2 — two copies
+drift into two conflicting specs. Instead give each such clause a stable
+**label/slug** (e.g. `PRE:frob-non-empty` on `Frobinator.Frobinate`); Tier 1
+states it, and Tier 2 refers to it by label and adds only the maintainer-facing
+elaboration (exhaustive edge behavior, the tests that evidence it, the relies it
+depends on). That keeps a single source of truth per clause while letting Tier 2
+build on it. The review skill checks the two tiers for coherence regardless (see
+`coco-contract-review`), but not duplicating in the first place is what prevents
+the drift.
+
+Rule of thumb: **if a caller needs it to call correctly, it is Tier 1 (and Tier 2
+may reference and elaborate it). If only a maintainer or reviewer needs it, it is
+Tier 2 alone.** When in doubt, keep Tier 1 lean — that is the whole point.
 
 ## 4. The contract algebra
 
@@ -137,10 +156,17 @@ contract is **stronger** than (a valid replacement for) an old one iff it:
 - **strengthens (or keeps) postconditions** — promises callers at least as much;
 - **preserves invariants and history properties.**
 
+A **history property** (Liskov–Wing) constrains how a component may change *over
+time*, across the sequence of calls — e.g. "once closed, a handle stays closed",
+or "the sequence number only ever increases". It is not a single-call
+precondition or postcondition but a rule about the allowed trajectory of states.
+
 A **stronger** contract is a *safe* change for existing callers: anything that
 worked against the old contract still works. A change that strengthens a
-precondition or weakens a postcondition is **breaking** — it can invalidate
-existing callers and must be surfaced and reviewed as such.
+precondition, weakens a postcondition, or weakens an invariant or history
+property (permitting a state or transition the old contract forbade) is
+**breaking** — it can invalidate existing callers and must be surfaced and
+reviewed as such.
 
 This algebra is the backbone of two skills:
 - **Fakes** (testing) must be behavioral subtypes of the real component — same
@@ -199,13 +225,15 @@ against* (§ the testing skill) — that is the practical bar, not formal syntax
 | **Public contract (Tier 1)** | The caller's-eye pre/post/invariants, in interface doc comments. |
 | **Full contract (Tier 2)** | The maintainer's-eye contract in the manifest-named contract file(s) (conventionally `component-contract.md`, possibly split or in a formal DSL): exhaustive behavior, rely-set, test map, fake notes, authority rationale. |
 | **Rely-set** | The specific dependency guarantees a component assumes in order to meet its own. |
-| **Stronger contract** | Weaker preconditions, stronger postconditions, preserved invariants (Liskov–Wing). A safe replacement. |
-| **Breaking change** | A contract edit that strengthens a precondition or weakens a postcondition. |
-| **Verified/faithful fake** | An in-memory stand-in that passes the same contract test suite as the real component. |
+| **Stronger contract** | Weaker preconditions, stronger postconditions, preserved invariants and history properties (Liskov–Wing). A safe replacement. |
+| **Breaking change** | A contract edit that strengthens a precondition, weakens a postcondition, or weakens an invariant or history property. |
+| **History property** | A constraint on how a component may change across a sequence of calls (e.g. "once closed, stays closed"), as opposed to a single-call pre/postcondition. |
+| **Verified/faithful fake** | An in-memory stand-in that adheres to the *same contract* as the real component — evidenced by passing the same contract test suite, and, where tests cannot reach, confirmed by review. Tests are necessarily incomplete, so passing them is necessary but not sufficient. |
 
 Sources: Meyer, *Design by Contract* (Eiffel); Liskov & Wing, *A Behavioral
 Notion of Subtyping* (TOPLAS 1994); Jones, *rely/guarantee* compositional
 reasoning; Fowler, *ContractTest* & *Consumer-Driven Contracts*; *Software
 Engineering at Google*, ch. 13 (test doubles / fakes); Ford et al., *Building
-Evolutionary Architectures* (fitness functions); the C4 model; and the project's
-own `rationale-and-concepts.md`.
+Evolutionary Architectures* (fitness functions); the C4 software architecture
+model; and the project's own rationale, snapshotted beside this file as
+[`architectural-contracts-rationale.md`](architectural-contracts-rationale.md).

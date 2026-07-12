@@ -26,14 +26,19 @@ dependency shape.
 ## Design principles
 
 - **Not prescriptive about format.** Interface files and contract files are
-  *designated by a project-wide manifest schema* (e.g. a textproto in the ARC
+  *designated by a project-wide manifest schema* (e.g. a textproto in the `arcc`
   tool). The skills read whatever schema is given; they do not invent one, and
-  they work whether or not the ARC conformance tool is present.
+  they work whether or not the `arcc` conformance tool is present.
 - **Contracts are the unit of reasoning.** Small public contracts let a reader
   (human or agent) reason about many components at once without reading
   implementations.
-- **Architectural change surfaces first.** Contract changes are emitted as a
-  reviewable declarative changeset *before* the code changes.
+- **Architectural change surfaces first.** Contract changes are worked out as a
+  reviewable declarative changeset *before* the code — that is where focused
+  review belongs. The changeset is a *review* artifact, though, not a commit that
+  lands on its own: a contract describing code not yet written would leave the
+  repo inconsistent (new contracts, old code). Land the contract change together
+  with its implementation as one atomic unit — e.g. a stacked-commit chain
+  absorbed into trunk together.
 - **Rigor is a spectrum.** Contracts are prose today; parts may become a formal
   DSL later. The workflows do not depend on formality — only on prose precise
   enough to test against.
@@ -44,4 +49,4 @@ Design by Contract (Meyer); behavioral subtyping (Liskov & Wing, TOPLAS 1994);
 rely/guarantee compositional reasoning (Jones); contract tests & verified fakes
 (Fowler; *Software Engineering at Google* ch. 13); ADRs, the C4 model, and
 fitness functions (*Building Evolutionary Architectures*). Project rationale:
-`architectural-contracts/docs/rationale-and-concepts.md`.
+[`coco-references/architectural-contracts-rationale.md`](coco-references/architectural-contracts-rationale.md).
