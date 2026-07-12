@@ -46,13 +46,13 @@ Every successfully written v2 report MUST contain a non-blank merge-request titl
 
 ```yaml
 merge_request:
-  title: "feat(awo): validate task state [Enhancement Step 02/Task 01]"
+  title: "feat(awo): validate task state [AWO Task State: Step 02/Task 01]"
   body: |
     Reviews the initial implementation and each subsequent rework change in
     the complete task series, including their tests and validation evidence.
 ```
 
-For a task under a plan, the title MUST end exactly with `[Enhancement Step NN/Task NN]`. For a standalone interactive task, it MUST end exactly with `[Enhancement Task NN]`. The suffix is contextual task identity, not a verdict or change ID.
+For a task under a plan, the title MUST end with a step/task reference of the form `[<Topic>: Step NN/Task NN]`. For a standalone interactive task, it MUST end with `[<Topic> Task NN]`. The suffix is a workflow task reference, not a verdict or change ID.
 
 ## Inline completion metadata
 

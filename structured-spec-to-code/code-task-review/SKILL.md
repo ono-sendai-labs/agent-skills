@@ -59,7 +59,7 @@ Read everything needed for review before forming any judgement.
 - You MUST resolve the current jj `change_id` and any supplied base/ordered produced changes.
 - You MUST obtain the complete jj diff and ordered history from the supplied base through the current change (use jj range commands such as `jj diff -r {base}..{current}`; never use Git).
 - You MUST list every file touched by the complete jj change series and read each one in its current state.
-- You MUST NOT create or move bookmarks, mutate commits or descriptions, amend/squash/rewrite changes, or otherwise change repository state. Review inspection is read-only.
+- You MUST NOT create or move bookmarks, mutate commits or descriptions, amend/squash/rewrite changes, or otherwise change repository state. Review inspection is read-only, except for writing the report file.
 - You SHOULD read referenced design documents only when an acceptance criterion or finding genuinely requires them — not by default
 - You MUST NOT read prior changes or unrelated parts of the codebase unless a specific finding demands it
 - **On a re-review round:** you SHOULD read the prior report at `{report_path}` before forming new judgements. The prior report is the canonical schema-shaped record of the previous cycle's findings and AC statuses; use it to focus the re-review on verifying resolution of prior `critical`/`important` findings and non-`pass` acceptance criteria.
@@ -160,7 +160,7 @@ Write a single YAML file at `{report_path}` conforming to the schema in `report-
 - You MUST sort `findings` by severity (`critical` first), then by file path
 - You MUST emit valid YAML — quote strings containing special characters, use block scalars (`|`) for multi-line content
 - You MUST overwrite any existing report at `{report_path}`. The report is always a fresh, self-contained report on the **current** commit — not a delta or patch. (The orchestrator preserves prior cycles' copies in the run directory before allowing the next cycle to start.)
-- Every successfully written report, including `approved`, `changes_requested`, and `blocked`, MUST include non-blank `merge_request.title` and `merge_request.body`. The title MUST describe the complete change series and end exactly with `[Enhancement Step NN/Task NN]` for a planned task or `[Enhancement Task NN]` for a standalone interactive task. The body MUST summarize the initial implementation and every subsequent rework change.
+- Every successfully written report, including `approved`, `changes_requested`, and `blocked`, MUST include non-blank `merge_request.title` and `merge_request.body`. The title MUST describe the complete change series and end with a task reference of the form `[<Topic>: Step NN/Task NN]` for a planned task or `[<Topic>: Task NN]` for a standalone interactive task; where `<Topic>` is a short (2-3 word) reference to the epic, feature/enhancement, etc which the step/task is part of. The body MUST summarize the initial implementation and every subsequent rework change.
 - After writing the report, you MUST report to the user (or calling orchestrator) the report path and the verdict; do not paste the entire report into the response.
 - After writing the report, you MUST emit a complete fenced block whose info string is exactly `spec-workflow-meta` (not bare `yaml`) carrying `status: completed`, `result_path`, and `schema_version: 1`. This locator means the report was written successfully, regardless of verdict. The complete fence may appear anywhere in the response, with prose before or after it; if multiple complete fences appear, the parser selects the last complete one. Use `status: failed` only if the skill could not produce a valid report. The format and parser rules are defined in `../task-to-code/result-schema.md`.
 
@@ -210,10 +210,12 @@ review:
   verdict: changes_requested
 
 merge_request:
-  title: "feat(models): add validated data models [Enhancement Step 02/Task 01]"
+  title: "feat(models): add validated data models [REST API: Step 02/Task 01]"
   body: |
-    Reviews the complete implementation and rework change series, including
-    the validation tests and their follow-up corrections.
+    Adds validated data models for all domain entities:
+      - models defined in ThingDSL
+      - validation rules for each model
+      - comprehensive fuzz test suite
 
 summary: |
   Implementation covers AC1 and AC2 with corresponding tests and clean

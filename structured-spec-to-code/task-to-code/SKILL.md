@@ -183,7 +183,7 @@ Create one fresh, unbookmarked jj change for the completed implementation.
 - You MUST commit all relevant files (implementation code, tests, and any necessary configuration changes)
 - You MUST NOT commit scratchpad files
 - You MUST NOT push to remote repositories
-- You MUST document the resulting `change_id` in progress.md. Record an exact `commit_id` only when a diagnostic specifically requires a revision identity.
+- You MUST document the resulting `change_id` in progress.md.
 - You MUST verify all checklist items are marked complete before committing
 - After committing, if the task originates from a plan (i.e., it lives under a `step{NN}/` directory within `{agents_dir}/tasks/`), you MUST check whether all tasks in that step directory are now complete (all have a corresponding commit documented in their scratchpad's progress.md). If so, you MUST mark the corresponding checklist item in the implementation plan as complete (change `- [ ]` to `- [x]`)
 
