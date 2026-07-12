@@ -1,0 +1,9 @@
+Review written for the changes-requested verdict.
+
+```spec-workflow-meta
+status: completed
+result_path: .agents/scratchpad/example/review.yaml
+schema_version: 1
+```
+
+The verdict remains in review.yaml, not in the locator status.

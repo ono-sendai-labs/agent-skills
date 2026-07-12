@@ -1,0 +1,14 @@
+result:
+  task_file: .agents/tasks/example/step02/task-01-example.code-task.md
+  change_id: stuvwxyz
+  status: completed
+  schema_version: 2
+  produced_at: 2026-07-10T15:11:23Z
+acceptance_criteria:
+  - text: implementation behavior
+    addressed: yes
+    evidence: tests/example_test.py covers the reworked behavior
+artifacts:
+  scratchpad_dir: .agents/scratchpad/example
+  files: [context.md, plan.md, progress.md, work.log, result.yaml]
+notes: The rework is a fresh child change and leaves an empty working copy.

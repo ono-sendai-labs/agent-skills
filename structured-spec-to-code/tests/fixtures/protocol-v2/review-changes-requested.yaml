@@ -1,0 +1,26 @@
+review:
+  task_file: .agents/tasks/example/step02/task-01-example.code-task.md
+  change_id: qrstuvwxyz
+  reviewed_at: 2026-07-10T15:10:00Z
+  verdict: changes_requested
+  schema_version: 2
+  lsp_coverage: covered
+merge_request:
+  title: "feat(example): finish implementation [Enhancement Step 02/Task 01]"
+  body: |
+    Reviews the initial implementation and identifies the follow-up needed in
+    the next fresh rework change.
+summary: The complete series needs a follow-up.
+acceptance_criteria:
+  - text: implementation behavior
+    status: partial
+    evidence: the follow-up test is not yet present
+findings:
+  - severity: important
+    category: tests
+    file: tests/example_test.py
+    title: Add follow-up coverage
+    details: The rework needs one additional behavioral assertion.
+    suggested_action: Add the missing assertion.
+    source: built-in
+ecosystem_reviews: []
