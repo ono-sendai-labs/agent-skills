@@ -177,7 +177,7 @@ Create one fresh, unbookmarked jj change for the completed implementation.
 **Constraints:**
 - You MUST NOT commit until both builds and tests pass
 - You MUST use `jj commit -m` for the implementation change. The message MUST contain a conventional-commit subject and a detailed body describing the specific implementation behavior and tests run; a terse subject alone is insufficient.
-- After `jj commit -m`, you MUST probe the produced task change at `@-` (for example, `jj log -r @- --no-graph -T 'change_id ++ "\\n"'`) and set `result.change_id` exactly to that stable `@-` change ID. Do not report the empty working-copy `@` change ID. You MUST leave an empty working-copy `@` with no direct descendants after committing.
+- After `jj commit -m`, you MUST probe the produced task change at `@-` (for example, `jj log -r @- --no-graph -T 'change_id ++ "\n"'`) and set `result.change_id` exactly to that stable `@-` change ID. Do not report the empty working-copy `@` change ID. You MUST leave an empty working-copy `@` with no direct descendants after committing.
 - You MUST NOT create or move bookmarks, rewrite an earlier task/base change, amend, or squash another change.
 - All repository inspection and mutation in this workflow MUST use jj, never Git.
 - You MUST commit all relevant files (implementation code, tests, and any necessary configuration changes)
