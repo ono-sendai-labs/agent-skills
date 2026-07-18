@@ -1,6 +1,6 @@
-# Task-to-Code — Result Schema (v1)
+# Task-to-Code — Result Schema (v2)
 
-The `task-to-code` skill emits two artifacts at the end of every turn: a `result.yaml` file written to the scratchpad, and a `spec-workflow-meta` fenced block as the final content of the turn. Both are documented here. The format is structured for programmatic consumption by orchestrators and readable by developers inspecting the scratchpad directly.
+The `task-to-code` skill emits two artifacts during every turn: a `result.yaml` file written to the scratchpad, and a `spec-workflow-meta` fenced locator. The artifact schema is v2; the tiny inline locator remains YAML schema v1. A complete locator fence may be surrounded by prose. Both are documented here for orchestrators and developers.
 
 ## `result.yaml` — Top-level structure
 
@@ -24,27 +24,27 @@ notes: |              # required — prose summary of the iteration
 ```yaml
 result:
   task_file: .agents/tasks/template-feature/step02/task-01-create-data-models.code-task.md
-  commit: abc123def             # jj change ID or git SHA; null if status != completed
+  change_id: qrstuvwxyz         # jj change ID, /^[k-z]+$/; null if status != completed
   status: completed             # completed | escalated | failed
-  schema_version: 1
+  schema_version: 2
   produced_at: 2026-04-28T15:01:23Z   # ISO 8601, UTC
 ```
 
 | Field | Required | Notes |
 |---|---|---|
 | `task_file` | yes | Path to the `.code-task.md` implemented, relative to the repo root |
-| `commit` | yes | Revision identifier; `null` if `status` is not `completed` |
+| `change_id` | yes | Stable jj change ID matching `^[k-z]+$` when `status: completed`; it is the produced task change at `@-` after commit, never the empty working-copy `@`; `null` otherwise |
 | `status` | yes | One of `completed`, `escalated`, `failed`. See status semantics below |
-| `schema_version` | yes | Currently `1`. Bump when the schema breaks compatibility |
+| `schema_version` | yes | Must be `2` for this producer artifact |
 | `produced_at` | yes | UTC timestamp in ISO 8601 |
 
 ### Status semantics
 
-| Status | Meaning | `commit` field | Conditional blocks |
+| Status | Meaning | `change_id` field | Conditional blocks |
 |---|---|---|---|
-| `completed` | Implementation done, tests pass, fresh commit produced | populated | none |
-| `escalated` | Agent escalated to the user; could not proceed autonomously | may be `null` | `escalation` block required |
-| `failed` | Agent attempted but cannot produce a working commit | may be `null` | `failure` block required |
+| `completed` | Implementation done, tests pass, and a fresh jj change with an empty `@` was produced; `change_id` identifies that produced change at `@-` | valid jj change ID | none |
+| `escalated` | Agent escalated to the user; could not proceed autonomously | `null` permitted | `escalation` block required |
+| `failed` | Agent attempted but cannot produce a working change | `null` permitted | `failure` block required |
 
 ## `acceptance_criteria`
 
@@ -125,7 +125,7 @@ notes: |
 
 ## `spec-workflow-meta` inline block
 
-After writing `result.yaml`, the skill closes the turn with a fenced block whose info string is exactly `spec-workflow-meta`. This block is a lightweight completion signal that lets an orchestrator locate the result file and detect the end of the turn without a separate round-trip.
+After writing `result.yaml`, the skill emits a complete fenced block whose info string is exactly `spec-workflow-meta`. This block is a lightweight schema-v1 completion signal that lets an orchestrator locate the result file and detect the end of the turn without a separate round-trip.
 
 ```
 spec-workflow-meta
@@ -138,12 +138,12 @@ schema_version: 1
 |---|---|---|
 | `status` | yes | Same value as `result.status` in the written file |
 | `result_path` | yes | Path to `result.yaml`, relative to the repo working directory |
-| `schema_version` | yes | Currently `1` |
+| `schema_version` | yes | Must remain `1`; this inline locator is not the v2 artifact schema |
 
 ### Parser rules
 
-- Find the **last** fenced block in the turn whose info string is exactly `spec-workflow-meta` (not bare `yaml` or any other string). The custom info string distinguishes this block from the illustrative YAML the skill quotes earlier in the turn.
-- That block MUST appear at the trailing end of the turn — only whitespace may follow its closing fence. Any prose after the closing fence is a violation; parsers should treat the turn as malformed.
+- Find the **last complete** fenced block in the turn whose info string is exactly `spec-workflow-meta` (not bare `yaml` or any other string). The custom info string distinguishes this block from the illustrative YAML the skill quotes earlier in the turn. An unterminated opening fence is ignored.
+- The complete block may appear anywhere in the response; prose or tool output may appear before or after its closing fence. If multiple complete blocks appear, select the last one.
 - The body is parsed as YAML. The three fields above are required; unknown keys are ignored (forward-compatible).
 - `result_path` is resolved relative to the working directory; the file MUST exist and parse against this schema.
 - A successful inline-block parse is necessary but not sufficient: the canonical artifact is `result.yaml`. If the inline block parses but `result.yaml` does not, the turn is treated as malformed.
@@ -155,9 +155,9 @@ These same rules apply to `spec-workflow-meta` blocks emitted by other skills in
 ```yaml
 result:
   task_file: .agents/tasks/template-feature/step02/task-01-create-data-models.code-task.md
-  commit: abc123def
+  change_id: qrstuvwxyz
   status: completed
-  schema_version: 1
+  schema_version: 2
   produced_at: 2026-04-28T15:01:23Z
 
 acceptance_criteria:
@@ -179,7 +179,8 @@ artifacts:
 
 notes: |
   Both acceptance criteria met with passing tests and clean TDD evidence
-  in work.log. The implementation follows existing ORM patterns. Commit abc123def.
+  in work.log. The implementation follows existing ORM patterns. The fresh
+  jj change has an empty working copy and no bookmark.
 ```
 
 ## Minimal example (escalated)
@@ -187,9 +188,9 @@ notes: |
 ```yaml
 result:
   task_file: .agents/tasks/template-feature/step02/task-02-add-validation.code-task.md
-  commit: null
+  change_id: null
   status: escalated
-  schema_version: 1
+  schema_version: 2
   produced_at: 2026-04-28T16:14:07Z
 
 acceptance_criteria:

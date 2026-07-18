@@ -1,0 +1,14 @@
+review:
+  task_file: .agents/tasks/example/task-01-example.code-task.md
+  change_id: qrstuvwxyz
+  reviewed_at: 2026-07-10T15:32:00Z
+  verdict: approved
+  schema_version: 2
+  lsp_coverage: covered
+merge_request:
+  title: "feat(example): interactive task [Enhancement Task 01]"
+  body: The standalone implementation series is reviewed in full.
+summary: The standalone task is approved.
+acceptance_criteria: [{text: implementation behavior, status: pass, evidence: covered}]
+findings: []
+ecosystem_reviews: []

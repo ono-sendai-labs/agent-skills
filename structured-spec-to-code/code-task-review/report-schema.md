@@ -1,4 +1,4 @@
-# Code Task Review — Report Schema (v1)
+# Code Task Review — Report Schema (v2)
 
 The `code-task-review` skill emits a single YAML file conforming to the schema below. The format is structured enough for orchestrators to consume programmatically (e.g., to render PR comments, drive a remediation loop, or aggregate metrics) and human-readable enough that a developer can open the file directly.
 
@@ -6,6 +6,8 @@ The `code-task-review` skill emits a single YAML file conforming to the schema b
 
 ```yaml
 review:           # required — metadata about the review itself
+  ...
+merge_request:    # required — non-blank whole-change title and body
   ...
 summary: |        # required — 2–4 sentence prose summary
   ...
@@ -22,21 +24,51 @@ ecosystem_reviews:  # required — record of ecosystem-specific reviewers run
 ```yaml
 review:
   task_file: .agents/tasks/template-feature/step02/task-01-create-data-models.code-task.md
-  commit: abc123def
+  change_id: qrstuvwxyz       # jj change ID, /^[k-z]+$/
   reviewed_at: 2026-04-27T14:32:00Z       # ISO 8601, UTC
   verdict: changes_requested              # approved | changes_requested | blocked
-  schema_version: 1
+  schema_version: 2
   lsp_coverage: covered                   # covered | partial | unavailable
 ```
 
 | Field | Required | Notes |
 |---|---|---|
 | `task_file` | yes | Path to the `.code-task.md` reviewed, relative to the repo root |
-| `commit` | yes | Revision identifier (jj change ID, git SHA, etc.) |
+| `change_id` | yes | Reviewed jj change ID matching `^[k-z]+$` |
 | `reviewed_at` | yes | UTC timestamp in ISO 8601 |
 | `verdict` | yes | One of `approved`, `changes_requested`, `blocked`. See SKILL.md §7 for the decision rule |
-| `schema_version` | yes | Currently `1`. Bump when the schema breaks compatibility |
+| `schema_version` | yes | Must be `2` for this reviewer artifact |
 | `lsp_coverage` | yes | `covered` if every touched file got LSP diagnostics; `partial` if some did; `unavailable` if no LSP tool was reachable |
+
+## `merge_request`
+
+Every successfully written v2 report MUST contain a non-blank merge-request title and body, regardless of `review.verdict`. They describe the complete ordered change series from the supplied base through the current change, including the initial implementation and every rework change.
+
+```yaml
+merge_request:
+  title: "feat(awo): validate task state [AWO Task State: Step 02/Task 01]"
+  body: |
+    Reviews the initial implementation and each subsequent rework change in
+    the complete task series, including their tests and validation evidence.
+```
+
+For a task under a plan, the title MUST end with a step/task reference of the form `[<Topic>: Step NN/Task NN]`. For a standalone interactive task, it MUST end with `[<Topic> Task NN]`. The suffix is a workflow task reference, not a verdict or change ID.
+
+## Inline completion metadata
+
+The reviewer also emits the small YAML `spec-workflow-meta` locator with `schema_version: 1`. Its `status` describes successful report writing, so it MUST be `completed` for `approved`, `changes_requested`, and `blocked` reports; it does not mirror `review.verdict`. A complete fence may appear anywhere in the response, with prose before or after it; when multiple complete fences occur, the last complete fence is selected and an unterminated opening fence is ignored.
+
+~~~~text
+Review report written.
+
+```spec-workflow-meta
+status: completed
+result_path: .agents/scratchpad/feat-task/review.yaml
+schema_version: 1
+```
+
+Additional prose is permitted after the closing fence.
+~~~~
 
 ## `summary`
 
@@ -170,11 +202,17 @@ Orchestrators can rely on this rule to route reports without re-reading the find
 ```yaml
 review:
   task_file: .agents/tasks/template-feature/step02/task-01-create-data-models.code-task.md
-  commit: abc123def
+  change_id: qrstuvwxyz
   reviewed_at: 2026-04-27T14:32:00Z
   verdict: approved
-  schema_version: 1
+  schema_version: 2
   lsp_coverage: covered
+
+merge_request:
+  title: "feat(models): add validated data models [Enhancement Task 01]"
+  body: |
+    Reviews the complete initial implementation and all subsequent rework
+    changes, including tests and validation evidence.
 
 summary: |
   All three acceptance criteria are met with corresponding tests. work.log

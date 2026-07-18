@@ -1,13 +1,13 @@
 ---
 name: task-to-code
-description: Autonomously implement a code task using test-driven development, following an Explore, Plan, Code, Commit workflow. Takes a structured code task file (from plan-to-tasks or interactive-coding-task) and produces a complete, tested implementation with a conventional commit. Escalates to the user only when blocked by issues that require revisiting the task, plan, or design.
+description: Autonomously implement a code task using test-driven development, following an Explore, Plan, Code, Commit workflow. Takes a structured code task file (from plan-to-tasks or interactive-coding-task) and produces a complete, tested implementation in a described jj change. Escalates to the user only when blocked by issues that require revisiting the task, plan, or design.
 ---
 
 # Task to Code
 
 ## Overview
 
-Autonomously implement a code task using TDD principles: Explore the codebase and requirements, Plan tests and implementation, Code following the RED → GREEN → REFACTOR cycle, and Commit the result. The agent works independently, documenting decisions in a scratchpad, and escalates only when blocked.
+Autonomously implement a code task using TDD principles: Explore the codebase and requirements, Plan tests and implementation, Code following the RED → GREEN → REFACTOR cycle, and commit the result as a new jj change. The agent works independently, documenting decisions in a scratchpad, and escalates only when blocked. Repository inspection and mutation MUST use jj; do not use Git commands.
 
 ## Parameters
 
@@ -172,15 +172,18 @@ For each acceptance criterion classified as non-behavioral in Step 3.1, verify i
 
 ### 5. Commit
 
-Create a conventional commit for the completed implementation.
+Create one fresh, unbookmarked jj change for the completed implementation.
 
 **Constraints:**
 - You MUST NOT commit until both builds and tests pass
-- You MUST follow the Conventional Commits specification
+- You MUST use `jj commit -m` for the implementation change. The message MUST contain a conventional-commit subject and a detailed body describing the specific implementation behavior and tests run; a terse subject alone is insufficient.
+- After `jj commit -m`, you MUST probe the produced task change at `@-` (for example, `jj log -r @- --no-graph -T 'change_id ++ "\n"'`) and set `result.change_id` exactly to that stable `@-` change ID. Do not report the empty working-copy `@` change ID. You MUST leave an empty working-copy `@` with no direct descendants after committing.
+- You MUST NOT create or move bookmarks, rewrite an earlier task/base change, amend, or squash another change.
+- All repository inspection and mutation in this workflow MUST use jj, never Git.
 - You MUST commit all relevant files (implementation code, tests, and any necessary configuration changes)
 - You MUST NOT commit scratchpad files
 - You MUST NOT push to remote repositories
-- You MUST document the commit revision identifier in progress.md
+- You MUST document the resulting `change_id` in progress.md.
 - You MUST verify all checklist items are marked complete before committing
 - After committing, if the task originates from a plan (i.e., it lives under a `step{NN}/` directory within `{agents_dir}/tasks/`), you MUST check whether all tasks in that step directory are now complete (all have a corresponding commit documented in their scratchpad's progress.md). If so, you MUST mark the corresponding checklist item in the implementation plan as complete (change `- [ ]` to `- [x]`)
 
@@ -189,14 +192,14 @@ Create a conventional commit for the completed implementation.
 After committing, write a canonical `result.yaml` to the scratchpad and close the conversation with a fenced completion-metadata block.
 
 **Constraints:**
-- You MUST write `{scratchpad}/result.yaml` conforming to the schema in `result-schema.md` (sibling file). Required fields: `result.task_file`, `result.commit`, `result.status`, `result.schema_version: 1`, `result.produced_at` as ISO 8601 UTC; `acceptance_criteria` list with `text`/`addressed`/`evidence` per criterion; `artifacts.scratchpad_dir` and `artifacts.files`; `escalation` block iff `status == escalated`; `failure` block iff `status == failed`; `notes` always present. The authoritative field definitions, status semantics, and examples are in `result-schema.md`.
+- You MUST write `{scratchpad}/result.yaml` conforming to the v2 schema in `result-schema.md` (sibling file). Required fields: `result.task_file`, `result.change_id`, `result.status`, `result.schema_version: 2`, `result.produced_at` as ISO 8601 UTC; `acceptance_criteria` list with `text`/`addressed`/`evidence` per criterion; `artifacts.scratchpad_dir` and `artifacts.files`; `escalation` block iff `status == escalated`; `failure` block iff `status == failed`; `notes` always present. A completed result MUST contain a valid jj change ID matching `^[k-z]+$`; failed/escalated results may use a null change ID. The authoritative field definitions, status semantics, and examples are in `result-schema.md`.
 - You MUST set `result.status` as follows:
-  - `completed` — implementation done, tests pass, fresh commit produced; `result.commit` populated with the commit revision identifier
+  - `completed` — implementation done, tests pass, a fresh jj change was produced, and `result.change_id` is populated with its valid stable change ID
   - `escalated` — you escalated to the user per the Escalation Policy; `escalation` block populated with `reason` and `details`
-  - `failed` — you attempted but cannot produce a working commit; `failure` block populated with `category` and `details`
+  - `failed` — you attempted but cannot produce a working change; `failure` block populated with `category` and `details`
 - You MUST populate `acceptance_criteria` with one entry per criterion in the task file, setting `addressed: yes | partial | no` and citing specific evidence in `evidence`. For behavioral criteria cite the test (file:line or test name) and implementation; for non-behavioral criteria cite the artifact-inspection evidence (a file:line or quoted excerpt) rather than a test name — a non-behavioral criterion is `addressed: yes` when the artifact demonstrably satisfies it, with no test required.
 - You MUST include a `notes` field (always present) with a 2–4 sentence prose summary of the iteration.
-- After writing `result.yaml`, you MUST close the conversation with a fenced block whose info string is exactly `spec-workflow-meta` (not bare `yaml`) carrying the keys `status`, `result_path`, and `schema_version`. This block MUST be the **final non-whitespace content of the turn** — no prose or other content may follow the closing fence. The format and parser rules are in `result-schema.md`.
+- After writing `result.yaml`, you MUST emit a complete fenced block whose info string is exactly `spec-workflow-meta` (not bare `yaml`) carrying the keys `status`, `result_path`, and `schema_version: 1`. The complete fence may appear anywhere in the response, with prose before or after it; if multiple complete fences appear, the parser selects the last complete one. The format and parser rules are in `result-schema.md`.
 
 **Example closing block:**
 
@@ -228,15 +231,15 @@ Each rework round runs in a **fresh session**: prior context is reloaded from on
 - You MUST address every enumerated item. For each change made, cite in `progress.md` which finding or AC it addresses.
 - Re-enter Step 4 (Code) to address findings. If the findings imply a planning rethink (e.g., the approach in `plan.md` requires revision), re-enter Step 3 (Plan) first.
 - You MUST update `work.log` with RED→GREEN cycles for any new or modified tests, following the Step 4.1 conventions.
-- You MUST produce a **fresh commit** for the rework changes. You MUST NOT amend the prior commit (`--amend` is forbidden for rework rounds). Follow the existing Step 5 commit conventions; the only delta is this no-amend invariant.
+- You MUST produce a **fresh child jj change** for the rework changes with `jj commit -m`, including a detailed implementation/test body. You MUST leave an empty `@`, create no bookmark, and MUST NOT amend, squash, rewrite, or otherwise mutate the prior implementation or task/base change. Every round is an additional ordered produced change.
 
-**Note on VCS conventions.** The fresh-commit-no-amend rule is specific to GitHub-style flat-history workflows (jj/git). Alternative VCS workflows — Gerrit-style amend-and-resubmit, stacked-commit conventions — would prefer different rules. Those workflows are out of scope for the current skill version and tracked as a v0.2 follow-up. Future maintainers integrating non-flat-history VCS workflows MUST extend this section rather than silently relaxing the no-amend rule.
+**Note on jj topology.** The fresh-child rule preserves the orchestrator's ordered task-change series: each rework is a new unbookmarked child of the current task tip, while the prior task/base changes remain untouched.
 
 #### 7.3 Re-emitting Results
 
 After producing the fresh commit, re-emit the structured result per Step 6:
-- You MUST overwrite `{scratchpad}/result.yaml` with the new commit revision in `result.commit`, refreshed `acceptance_criteria` evidence reflecting the rework, and an updated `notes` paragraph describing what changed between rounds.
-- You MUST close the turn with a fresh `spec-workflow-meta` block per Step 6's contract — same keys, same trailing-content invariant. The `result_path` is unchanged; the orchestrator archives the prior round's copy before launching the next round.
+- You MUST overwrite `{scratchpad}/result.yaml` with the new jj `change_id` in `result.change_id`, refreshed `acceptance_criteria` evidence reflecting the rework, and an updated `notes` paragraph describing what changed between rounds.
+- You MUST emit a fresh `spec-workflow-meta` block per Step 6's v1 locator contract. The `result_path` is unchanged; the orchestrator archives the prior round's copy before launching the next round.
 
 #### 7.4 Escalation During Rework
 
@@ -263,7 +266,10 @@ task: ".agents/tasks/template-feature/step02/task-01-create-data-models.code-tas
    - REFACTOR: Extract shared validation patterns
    - ... (continue for remaining requirements)
    - Validate: All tests pass, build succeeds
-5. Commit: "feat(models): add Template and Field data models with validation"
+5. Commit with `jj commit -m` using a conventional subject plus a detailed body
+   describing the implementation behavior and tests: "feat(models): add data
+   models with validation\n\nAdds Template and Field models, validates required
+   fields, and records the passing test commands."
 ```
 
 ## Troubleshooting

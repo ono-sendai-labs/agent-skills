@@ -1,0 +1,9 @@
+Review written for the blocked verdict.
+
+```spec-workflow-meta
+status: completed
+result_path: .agents/scratchpad/example/review.yaml
+schema_version: 1
+```
+
+The successful write signal is still completed.

@@ -1,0 +1,9 @@
+Implementation complete; the canonical result was written.
+
+```spec-workflow-meta
+status: completed
+result_path: .agents/scratchpad/example/result.yaml
+schema_version: 1
+```
+
+The surrounding turn may contain additional prose after the locator.

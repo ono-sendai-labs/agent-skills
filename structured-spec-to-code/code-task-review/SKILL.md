@@ -1,43 +1,46 @@
 ---
 name: code-task-review
-description: Review commits produced by `task-to-code`. Supports initial reviews and re-reviews — a re-review is a fresh invocation that reads the prior review from disk and validates that its findings were addressed in the new commit. Verifies acceptance-criteria coverage, test integrity (incl. detection of deleted/weakened tests), code style and LSP cleanliness on touched files, and security. Produces a structured YAML report that an orchestrator can use to route remediation back to the implementer.
+description: Review jj changes produced by `task-to-code`. Supports initial reviews and re-reviews — a re-review is a fresh invocation that reads the prior review from disk and validates that its findings were addressed in the new change. Verifies acceptance-criteria coverage, test integrity (incl. detection of deleted/weakened tests), code style and LSP cleanliness on touched files, and security. Produces a structured YAML report that an orchestrator can use to route remediation back to the implementer.
 ---
 
 # Code Task Review
 
 ## Overview
 
-Review the commit that completes a code task. The reviewer reads the task file, the scratchpad evidence (especially `work.log`), the commit diff, and the touched files, then produces a structured YAML report at a known path.
+Review the complete ordered jj task-change series from the supplied base through the current produced change. The reviewer reads the task file, scratchpad evidence (especially `work.log`), the jj diff and history for that whole range, and every touched file, then produces a structured YAML report at a known path. Repository inspection is jj-only.
 
 The skill supports **two modes of invocation** with the same Steps below:
-- **Initial review** — first review of a fresh commit. No prior report exists at `{report_path}`.
-- **Re-review** — review of a rework commit produced in response to a prior review. The kickoff prompt indicates this is a re-review; a prior report exists at `{report_path}` and is read from disk before forming new judgements. A re-review focuses on validating that prior `critical`/`important` findings and prior non-`pass` acceptance criteria have been addressed, surfaces regressions, and produces a fresh self-contained report on the current commit.
+- **Initial review** — first review of a fresh produced jj change. No prior report exists at `{report_path}`.
+- **Re-review** — review of a fresh rework change produced in response to a prior review. The kickoff prompt indicates this is a re-review; a prior report exists at `{report_path}` and is read from disk before forming new judgements. A re-review focuses on validating that prior `critical`/`important` findings and prior non-`pass` acceptance criteria have been addressed, surfaces regressions, and produces a fresh self-contained report on the current change series.
 
 Each invocation runs in its own session; prior context is reloaded from the on-disk `review.yaml` rather than carried in conversation history. This keeps state management simple, makes recovery from crashes straightforward (just restart the re-review), and avoids prompt-cache expiry costs that would accrue across the implementer's intervening rework round.
 
 The report format is defined in `report-schema.md` (sibling file). Findings carry a severity (`critical` / `important` / `suggestion` / `nit`), a category, and a file/line reference, so the same report can drive an interactive fix loop, PR-comment generation, or human-readable summary without further parsing. An external orchestrator decides what to do with findings.
 
-**Note: human-driven invocations.** A single ad-hoc invocation (human running the skill once on a commit) is fully supported and produces a valid `review.yaml` and a trailing `spec-workflow-meta` block. Re-review behavior is triggered only when both a prior report exists at `{report_path}` and the prompt directs a re-review. The re-review capability MUST remain non-disruptive for standalone human invocations across future edits to this skill.
+**Note: human-driven invocations.** A single ad-hoc invocation (human running the skill once on a jj change) is fully supported and produces a valid `review.yaml` and a complete `spec-workflow-meta` block. Re-review behavior is triggered only when both a prior report exists at `{report_path}` and the prompt directs a re-review. The re-review capability MUST remain non-disruptive for standalone human invocations across future edits to this skill.
 
 ## Parameters
 
 - **agents_dir** (optional, default: `.agents`): Base directory for structured-spec-to-code artifacts
 - **task** (required): Path to the `.code-task.md` file that was implemented
-- **commit** (optional): Revision identifier of the commit under review. If omitted, you MUST read it from the task's `progress.md` (recorded by `task-to-code` after committing)
+- **current_change** (optional): Current produced jj `change_id` under review. If omitted, you MUST read it from the task's `progress.md` (recorded by `task-to-code` after committing)
+- **base_change** (optional): jj `change_id` of the task base. When supplied by an orchestrator, review the complete base-to-current range.
+- **produced_changes** (optional): Ordered jj `change_id` list for the implementation and rework changes. When supplied, review every listed change in order and describe the complete series in the merge request.
+- **task_state** (optional): Orchestrator task-state path supplying current/base/ordered produced-change context. Use it when available; standalone human invocations remain valid with only the task and current change.
 - **scratchpad_dir** (optional): Base directory for scratchpads. Defaults to `{agents_dir}/scratchpad/`. The task's scratchpad is derived by mirroring the task file's path under `tasks/`, identical to the rule used by `task-to-code`
 - **report_path** (optional): Where to write the YAML report. Defaults to `{scratchpad}/review.yaml`. On a re-review round, the prior report at this path MUST be read before forming new judgements.
 
 **Constraints for parameter acquisition:**
 - You MUST ask for all parameters upfront in a single prompt
 - You MUST validate that the task file and scratchpad exist
-- You MUST resolve the commit revision before proceeding (from parameters or `progress.md`); if neither is available, escalate
+- You MUST resolve the current jj `change_id` before proceeding (from parameters or `progress.md`); if neither is available, escalate
 
 ## Escalation Policy
 
 This skill does not block on findings — findings go in the report. This holds for both initial and re-review rounds. Escalate to the user ONLY when:
-- The commit revision cannot be resolved
+- The current jj change ID cannot be resolved
 - The task file or scratchpad is missing or malformed in a way that prevents review
-- The commit cannot be inspected (VCS errors, missing parent, etc.)
+- The current change cannot be inspected (jj errors, missing parent, etc.)
 
 Do NOT escalate because findings are severe — record them in the report and let the orchestrator decide.
 
@@ -53,11 +56,12 @@ Read everything needed for review before forming any judgement.
   - Technical Requirements
   - Reference Documentation paths
 - You MUST read the scratchpad files: `context.md`, `plan.md`, `progress.md`, and `work.log`
-- You MUST resolve the commit revision (from parameters or `progress.md`)
-- You MUST obtain the diff between the commit and its parent (use the project's VCS — `jj diff -r {commit}` or `git show {commit}` as appropriate)
-- You MUST list every file touched by the commit and read each one in its post-commit state
+- You MUST resolve the current jj `change_id` and any supplied base/ordered produced changes.
+- You MUST obtain the complete jj diff and ordered history from the supplied base through the current change (use jj range commands such as `jj diff -r {base}..{current}`; never use Git).
+- You MUST list every file touched by the complete jj change series and read each one in its current state.
+- You MUST NOT create or move bookmarks, mutate commits or descriptions, amend/squash/rewrite changes, or otherwise change repository state. Review inspection is read-only, except for writing the report file.
 - You SHOULD read referenced design documents only when an acceptance criterion or finding genuinely requires them — not by default
-- You MUST NOT read prior commits or unrelated parts of the codebase unless a specific finding demands it
+- You MUST NOT read prior changes or unrelated parts of the codebase unless a specific finding demands it
 - **On a re-review round:** you SHOULD read the prior report at `{report_path}` before forming new judgements. The prior report is the canonical schema-shaped record of the previous cycle's findings and AC statuses; use it to focus the re-review on verifying resolution of prior `critical`/`important` findings and non-`pass` acceptance criteria.
 
 ### Re-review Round Behavior
@@ -66,11 +70,11 @@ When the kickoff prompt indicates a re-review and a prior report exists at `{rep
 
 **Constraints:**
 - You MUST read the prior `{report_path}` before forming judgements (per Step 1). The file is the canonical schema-shaped record of the previous round; it is the only carrier of prior-round context across the session boundary.
-- You MUST focus the review on validating that every `critical`/`important` finding from the prior report has been addressed in the new commit. For each prior finding, cite the specific code or test change (file:line) that resolves it.
+- You MUST focus the review on validating that every `critical`/`important` finding from the prior report has been addressed in the new change. For each prior finding, cite the specific code or test change (file:line) that resolves it.
 - You MUST focus on validating that every prior acceptance criterion whose status was `fail`, `partial`, or `not_verified` is now `pass` (or explain why it remains non-passing).
 - You MUST surface any regressions introduced by the rework — for example, newly deleted tests, new style or security issues introduced while fixing prior ones. Regressions are findings in their own right and are not excused by the prior round.
-- You MUST overwrite `{report_path}` with a fresh, self-contained report on the **current** commit, conforming in full to `report-schema.md`. The report is not a delta — it covers the current commit completely, with prior-finding resolution reflected in the `summary` and `evidence` fields.
-- You SHOULD reflect prior-finding resolution in the prose `summary` field (e.g., "All three prior findings resolved at commit X; one new style suggestion in models.py introduced during the rework.").
+- You MUST overwrite `{report_path}` with a fresh, self-contained report on the **current** change series, conforming in full to `report-schema.md`. The report is not a delta — it covers the complete series, with prior-finding resolution reflected in the `summary` and `evidence` fields.
+- You SHOULD reflect prior-finding resolution in the prose `summary` field (e.g., "All three prior findings resolved in the new change; one new style suggestion in models.py introduced during the rework.").
 - You SHOULD NOT redo a full from-scratch review if the rework was narrow in scope. Focus effort where the rework touched the code; resurface prior-round concerns only if they remain unaddressed.
 
 ### 2. Discover Ecosystem-Specific Reviewers
@@ -89,7 +93,7 @@ Detect any installed skills that perform tech-stack-specific review and that fit
 Before assessing production code, evaluate the test changes. This ordering avoids being anchored by the implementation.
 
 **Constraints:**
-- You MUST identify every test file touched by the commit and review its diff
+- You MUST identify every test file touched by the complete change series and review its jj diff
 - You MUST check for deleted or weakened tests using these signals:
   - Tests removed in the diff (any `- def test_…` / `- it(…)` / equivalent)
   - Assertions removed without equivalent assertions added elsewhere
@@ -106,7 +110,7 @@ Before assessing production code, evaluate the test changes. This ordering avoid
 
 ### 4. Verify Acceptance Criteria
 
-For every acceptance criterion in the task file, determine whether the committed code satisfies it.
+For every acceptance criterion in the task file, determine whether the produced change series satisfies it.
 
 **Constraints:**
 - You MUST produce one entry in `acceptance_criteria` per criterion in the task file, preserving the original criterion text
@@ -124,7 +128,7 @@ Inspect the touched files for style issues and language-server diagnostics.
 
 **Constraints:**
 - You MUST consult `{agents_dir}/summary/coding_style.md` if it exists and treat it as the authoritative reference for naming, structure, error handling, and imports
-- You MUST inspect every file touched by the commit for:
+- You MUST inspect every file touched by the change series for:
   - Convention violations relative to coding_style.md or surrounding code
   - Dead code, leftover debugging output, commented-out blocks
   - Comments that explain *what* the code does (those are noise) versus *why* (those may be appropriate)
@@ -134,7 +138,7 @@ Inspect the touched files for style issues and language-server diagnostics.
 
 ### 6. Security Pass
 
-Assess the commit for security issues at the scope of the change.
+Assess the produced change series for security issues at the scope of the change.
 
 **Constraints:**
 - You MUST consider, at minimum: input validation at trust boundaries, authentication/authorization changes, handling of secrets and credentials, injection risks (SQL, command, template), unsafe deserialization, broken access control, sensitive data exposure in logs/errors, unsafe file/path operations
@@ -144,7 +148,7 @@ Assess the commit for security issues at the scope of the change.
 
 ### 7. Emit the Report
 
-Write a single YAML file at `{report_path}` conforming to the schema in `report-schema.md`, then close the turn with a fenced completion-metadata block.
+Write a single YAML file at `{report_path}` conforming to the schema in `report-schema.md`, then emit a complete fenced completion-metadata block.
 
 **Constraints:**
 - You MUST follow the schema in `report-schema.md` exactly — field names, allowed values, required fields
@@ -152,12 +156,13 @@ Write a single YAML file at `{report_path}` conforming to the schema in `report-
   - `approved` if no `critical` or `important` findings, and all acceptance criteria are `pass`
   - `changes_requested` if there are `important` findings or `partial`/`fail` acceptance criteria but the task is salvageable with edits
   - `blocked` if `critical` findings indicate the task should not be considered complete (e.g., test deletion without justification, security issue, criterion entirely unmet)
-- You MUST include a `summary` field with a 2–4 sentence prose summary suitable for a human reader. On a re-review, the `summary` SHOULD reflect prior-finding resolution (e.g., "All three prior findings resolved at commit X; one new style suggestion in models.py introduced during the rework.").
+- You MUST include a `summary` field with a 2–4 sentence prose summary suitable for a human reader. On a re-review, the `summary` SHOULD reflect prior-finding resolution (e.g., "All three prior findings resolved in the new jj change; one new style suggestion in models.py introduced during the rework.").
 - You MUST sort `findings` by severity (`critical` first), then by file path
 - You MUST emit valid YAML — quote strings containing special characters, use block scalars (`|`) for multi-line content
 - You MUST overwrite any existing report at `{report_path}`. The report is always a fresh, self-contained report on the **current** commit — not a delta or patch. (The orchestrator preserves prior cycles' copies in the run directory before allowing the next cycle to start.)
-- After writing the report, you MUST report to the user (or calling orchestrator) the report path and the verdict; do not paste the entire report into the response
-- After writing the report, you MUST close the turn with a fenced block whose info string is exactly `spec-workflow-meta` (not bare `yaml`) carrying the keys `status`, `result_path`, and `schema_version`. This block MUST be the **final non-whitespace content of the turn** — no prose or other content may follow the closing fence. Use `status: completed` for any well-formed report (regardless of verdict); use `status: failed` only if the skill could not produce a valid report. The `spec-workflow-meta` format and parser rules are defined in `../task-to-code/result-schema.md` (sibling skill in this repo).
+- Every successfully written report, including `approved`, `changes_requested`, and `blocked`, MUST include non-blank `merge_request.title` and `merge_request.body`. The title MUST describe the complete change series and end with a task reference of the form `[<Topic>: Step NN/Task NN]` for a planned task or `[<Topic>: Task NN]` for a standalone interactive task; where `<Topic>` is a short (2-3 word) reference to the epic, feature/enhancement, etc which the step/task is part of. The body MUST summarize the initial implementation and every subsequent rework change.
+- After writing the report, you MUST report to the user (or calling orchestrator) the report path and the verdict; do not paste the entire report into the response.
+- After writing the report, you MUST emit a complete fenced block whose info string is exactly `spec-workflow-meta` (not bare `yaml`) carrying `status: completed`, `result_path`, and `schema_version: 1`. This locator means the report was written successfully, regardless of verdict. The complete fence may appear anywhere in the response, with prose before or after it; if multiple complete fences appear, the parser selects the last complete one. Use `status: failed` only if the skill could not produce a valid report. The format and parser rules are defined in `../task-to-code/result-schema.md`.
 
 **Example closing block:**
 
@@ -176,8 +181,9 @@ task: ".agents/tasks/template-feature/step02/task-01-create-data-models.code-tas
 
 ### Example Process
 ```
-1. Load: read task file (3 acceptance criteria), scratchpad (progress.md cites commit
-   abc123def), work.log (3 RED→GREEN cycles recorded), and `jj diff -r abc123def`.
+1. Load: read task file (3 acceptance criteria), scratchpad (progress.md cites the
+   current change), work.log (3 RED→GREEN cycles recorded), and the complete jj
+   base-to-current diff.
 2. Ecosystem scan: project is Python; no matching ecosystem-review skill installed →
    ecosystem_reviews: [].
 3. Tests first: 4 test cases added, none removed, no skip markers. work.log shows
@@ -198,9 +204,18 @@ task: ".agents/tasks/template-feature/step02/task-01-create-data-models.code-tas
 ```yaml
 review:
   task_file: .agents/tasks/template-feature/step02/task-01-create-data-models.code-task.md
-  commit: abc123def
+  change_id: qrstuvwxyz
+  schema_version: 2
   reviewed_at: 2026-04-27T14:32:00Z
   verdict: changes_requested
+
+merge_request:
+  title: "feat(models): add validated data models [REST API: Step 02/Task 01]"
+  body: |
+    Adds validated data models for all domain entities:
+      - models defined in ThingDSL
+      - validation rules for each model
+      - comprehensive fuzz test suite
 
 summary: |
   Implementation covers AC1 and AC2 with corresponding tests and clean
@@ -231,9 +246,9 @@ findings:
 
 ## Troubleshooting
 
-### Commit Cannot Be Resolved
-If neither the `commit` parameter nor `progress.md` provides a revision:
-- You MUST escalate to the user. Do not guess at the latest commit — you may review the wrong change
+### Current Change Cannot Be Resolved
+If neither the `current_change` parameter nor `progress.md` provides a jj change ID:
+- You MUST escalate to the user. Do not guess at the latest change — you may review the wrong series
 
 ### Scratchpad Is Missing or Empty
 If the scratchpad does not exist or `work.log` is absent:
@@ -247,7 +262,7 @@ If no LSP-diagnostic tool is available in the harness:
 
 ### Conflicting Evidence Between work.log and Diff
 If `work.log` claims a test exists but the diff shows it removed (or vice versa):
-- You MUST treat this as a `critical` finding under category `tests`, titled "TDD evidence inconsistent with commit"
+- You MUST treat this as a `critical` finding under category `tests`, titled "TDD evidence inconsistent with change"
 - The orchestrator should re-open the task
 
 ## Artifacts
@@ -257,4 +272,4 @@ If `work.log` claims a test exists but the diff shows it removed (or vice versa)
 └── review.yaml      — Structured review report (schema in report-schema.md); overwritten on every invocation (initial or re-review)
 ```
 
-The skill writes one file. It does not modify the task file, the commit, or any other scratchpad artifact. On each invocation, `{report_path}` is overwritten with a fresh, self-contained report on the current commit; the orchestrator archives the prior round's copy before launching the next round.
+The skill writes one report file. It does not modify the task file, any jj change or description, repository state, or any other scratchpad artifact. On each invocation, `{report_path}` is overwritten with a fresh, self-contained report on the current change series; the orchestrator archives the prior round's copy before launching the next round.
