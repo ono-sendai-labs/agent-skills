@@ -18,8 +18,8 @@ Repository interaction is **jj-only**. Never use Git commands.
 - **plan_file** (required): Path to the implementation plan, e.g. `.agents/planning/{project_name}/implementation/plan.md`. The **planning slug** is the `{project_name}` path component; it names the task directories and bookmarks.
 - **work_log** (optional, default: `.agents/scratchpad/orchestration-report.{planning_slug}.md`): Your durable orchestration record. Read it first; create it if absent; keep it updated after every step and task.
 - **generate_tasks_cmd** (optional, default: `.agents/scratchpad/awo-generate-tasks.sh`): Invoked as `{generate_tasks_cmd} {plan_file} {step_number}`. Drives an agent that runs `plan-to-tasks` and commits the resulting task files.
-- **run_task_cmd** (optional, default: `.agents/scratchpad/awo-codex-task-loop.sh`): Invoked as `{run_task_cmd} {task_file}`. Wraps `awo run` with the harness/model/effort flags for this project.
-- **rework_task_cmd** (optional, default: `{run_task_cmd}` with `run` replaced by `rework`): Invoked to resume a task in rework mode. See §Escalation Handling for its inputs.
+- **run_task_cmd** (optional, default: `.agents/scratchpad/awo-run-task.sh`): Invoked as `{run_task_cmd} {task_file}`. Wraps `awo run` with the harness/model/effort flags for this project.
+- **rework_task_cmd** (optional, default: `.agents/scratchpad/awo-rework-task.sh`): Invoked to resume a task in rework mode. Wraps `awo rework` with the same harness/model/effort flags as `run_task_cmd`, and passes through the resume arguments (seed review, base, produced changes). See §Escalation Handling for its inputs.
 
 **Constraints for parameter acquisition:**
 - You MUST resolve `plan_file` before starting; everything else has a derivable default.
@@ -31,6 +31,7 @@ Repository interaction is **jj-only**. Never use Git commands.
 - **Long-running commands.** The wrapper scripts drive agent harnesses and can run for hours, producing little output. You MUST run them as background tasks and wait for completion notification. If the inner agent exhausts its quota it will block and appear to hang — you MUST NOT cancel it.
 - **Never destroy completed work.** No `jj abandon`, no `jj undo`, no amending or squashing changes produced by a task loop. Every recovery must be additive.
 - **jj only.** Inspect and mutate the repository with jj.
+- **Create bookmarks, never move them.** Always use `jj bookmark create` — never `jj bookmark set`. `create` fails if the name already exists, surfacing a name collision or a re-run you did not intend; `set` would silently move an existing bookmark off the change it was protecting. A `create` failure is a stop-and-investigate signal, not something to switch to `set` for.
 - **When in doubt, stop and ask the user.** The user is often away from keyboard; a clean stop with a clear question in the `work_log` beats a guess.
 - **If you get lost**, re-read `work_log` and the plan to reorient before acting.
 
@@ -49,7 +50,7 @@ Loop over plan steps from the resolved next step number until every step in `pla
 **Constraints:**
 - You MUST run `{generate_tasks_cmd} {plan_file} {step_number}` as a background task and wait for it.
 - After it returns, you MUST verify you are again in an empty working copy with `@-` holding the task files. If the agent left the files uncommitted in `@`, you MUST commit them yourself.
-- You MUST create a bookmark on that change named `pr/awo-generate-task-step-{step_number}`.
+- You MUST create a bookmark on that change named `pr/awo-generate-task-{planning_slug}-step-{step_number}` (with `jj bookmark create`). The `{planning_slug}` guarantees the name is unique across concurrently-open plans.
 - You MUST enumerate the step's task files (`jj log -s` on the change). They live in `.agents/tasks/{planning_slug}/step{NN}/` and are named `task-{MM}-{task_slug}.code-task.md`.
 - You MUST record the generated task files in `work_log` before implementing any of them.
 
@@ -62,7 +63,7 @@ For each task file in order:
 **Constraints:**
 - You MUST verify `@` is empty; commit stray files if present.
 - You MUST note the change ID of `@-` — the tip left by the previous task or by task generation. This is the task's **base**.
-- You MUST verify `@-` carries a bookmark. If not, create one named `awo-loop-checkpoint-{slug}` so the base is recoverable.
+- You MUST verify `@-` carries a bookmark. If not, create one (with `jj bookmark create`) named `awo-loop-checkpoint-step{NN}-task{MM}-{task_slug}` so the base is recoverable. The step/task/slug components MUST make the name unique — a bare `awo-loop-checkpoint` reused across tasks would collide, and `create` would (correctly) reject it.
 
 #### 3.2 Run the awo Task Loop
 
@@ -88,7 +89,7 @@ The loop leaves one change per round — the initial implementation plus one per
 **Constraints:**
 - You MUST verify `@` is empty; commit stray files if present.
 - You MUST note the change ID of `@-`, the last change the loop produced.
-- You MUST bookmark `@-` as `pr/{planning_slug}/step{NN}/task-{MM}-{task_slug}.code-task`. These bookmarks are what PR generation consumes, so the name must match exactly.
+- You MUST bookmark `@-` as `pr/{planning_slug}/step{NN}/task-{MM}-{task_slug}.code-task`, with `jj bookmark create`. These bookmarks are what PR generation consumes, so the name must match exactly.
 
 #### 3.4 Update the Work Log
 
@@ -213,9 +214,22 @@ ecosystem_reviews: []
 
 ### E.5 Resume with `awo rework`
 
+`awo rework` identifies the task from the seed review's `review.task_file`; it takes no positional task-file argument. It needs the seed review plus the change series to resume from, in one of two equivalent forms:
+
+```sh
+# Explicit form: base + produced changes, oldest-to-newest
+{rework_task_cmd} --seed-review <path to injected review> \
+    --base <S> --produced-change <I1′> [--produced-change <I2′> …]
+
+# Prior-run form: reuse the earlier run's task-state.json
+{rework_task_cmd} --seed-review <path to injected review> \
+    --task-state .agents/runs/<timestamp>-task-<MM>-<slug>/task-state.json
+```
+
 **Constraints:**
-- You MUST resume with `{rework_task_cmd}`, which invokes `awo rework` with the corrected task file, `--seed-review <path to the injected review>`, the base (`S`), and the ordered produced changes (or the task-state path), plus the project's usual harness/model/effort flags.
-- awo pre-flights the resume: `@` must be empty, and the produced changes must descend from the given base. A pre-flight error means your topology from §E.3 is wrong — re-inspect with `jj log`; do not force it.
+- You MUST resume with `{rework_task_cmd}`, passing `--seed-review <path to the injected review>` plus either `--base <S>` with the ordered `--produced-change` list (oldest-to-newest), or `--task-state <path>`. The wrapper supplies the project's harness/model/effort flags; you supply the resume arguments.
+- The `--base` MUST be the interposed spec commit `S` from §E.3, so the reworked round descends from the corrected spec. Pass the produced changes `I1′ … In′` in oldest-to-newest order.
+- awo pre-flights the resume: `@` must be empty and childless, `@-` must be described/bookmarked, and the produced changes must descend from the given base. A pre-flight error means your topology from §E.3 is wrong — re-inspect with `jj log`; do not force it.
 - The seeded round is a **rework** round: the implementer reads the injected review and produces a fresh child change. Subsequent rounds are the normal loop under `--max-rework-rounds`.
 - When it returns, you MUST route on its terminal status exactly as in §3.2. A second escalation on the same task after a repair is a stop-and-ask condition — do not repair twice in a row.
 - On approval, continue at §3.3. The task's bookmark goes on the final tip; the spec commit keeps its own bookmark, and both appear in the log as separate, reviewable changes.
@@ -226,7 +240,7 @@ ecosystem_reviews: []
 ### Example: normal step
 
 ```
-Step 03, 4 tasks generated → bookmark pr/awo-generate-task-step-3
+Step 03, 4 tasks generated → bookmark pr/awo-generate-task-2026-07-18-escalation-step-3
   task-01 → APPROVED, 1 round  → pr/2026-07-18-escalation/step03/task-01-….code-task
   task-02 → APPROVED, 3 rounds → pr/2026-07-18-escalation/step03/task-02-….code-task
   …
@@ -296,8 +310,8 @@ Stop. Either the repair was wrong or the defect is deeper than §E.2's boundary 
 Bookmarks created:
 
 ```
-pr/awo-generate-task-step-{N}                           — the step's task-generation change
-awo-loop-checkpoint-{slug}                              — recovery checkpoint on an unbookmarked base
+pr/awo-generate-task-{planning_slug}-step-{N}           — the step's task-generation change
+awo-loop-checkpoint-step{NN}-task{MM}-{slug}            — recovery checkpoint on an unbookmarked base
 pr/{planning_slug}/step{NN}/task-{MM}-{slug}.code-task  — the task's final tip (consumed by PR generation)
 pr/{planning_slug}-spec-fix-step{NN}-task{MM}           — an interposed spec repair commit
 ```
