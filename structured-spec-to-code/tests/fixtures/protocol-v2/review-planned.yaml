@@ -6,7 +6,7 @@ review:
   schema_version: 2
   lsp_coverage: covered
 merge_request:
-  title: "feat(example): planned task [Enhancement Step 02/Task 01]"
+  title: "feat(example): planned task [Enhancement: Step 02/Task 01]"
   body: The initial implementation and all rework changes are reviewed.
 summary: The planned task is approved.
 acceptance_criteria: [{text: implementation behavior, status: pass, evidence: covered}]

@@ -6,7 +6,7 @@ review:
   schema_version: 2
   lsp_coverage: covered
 merge_request:
-  title: "feat(example): enforce quota [Enhancement Task 03]"
+  title: "feat(example): enforce quota [Enhancement: Task 03]"
   body: |
     Reviews the complete implementation series and records the specification
     defect that prevents the task from being satisfied as written.

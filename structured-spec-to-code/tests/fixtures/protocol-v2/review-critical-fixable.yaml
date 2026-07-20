@@ -6,7 +6,7 @@ review:
   schema_version: 2
   lsp_coverage: covered
 merge_request:
-  title: "feat(example): parse config file [Enhancement Task 02]"
+  title: "feat(example): parse config file [Enhancement: Task 02]"
   body: |
     Reviews the complete implementation series. A genuine but fixable critical
     defect is recorded for the implementer to address in a rework round.

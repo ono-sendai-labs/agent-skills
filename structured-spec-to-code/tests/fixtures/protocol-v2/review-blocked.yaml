@@ -6,7 +6,7 @@ review:
   schema_version: 2
   lsp_coverage: unavailable
 merge_request:
-  title: "feat(example): inspect implementation [Enhancement Task 01]"
+  title: "feat(example): inspect implementation [Enhancement: Task 01]"
   body: |
     Reviews the complete available implementation series and records the
     blocking condition for the human or orchestrator.
