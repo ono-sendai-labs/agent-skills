@@ -95,11 +95,29 @@ Present only when `status == escalated`.
 
 ```yaml
 escalation:
-  reason: ambiguous_requirement     # short tag, e.g. ambiguous_requirement | blocked_dependency | design_conflict
+  reason: spec_defect               # see the shared taxonomy below
   details: |
-    Multi-line prose explanation aimed at the user: what the blocker is,
-    what was tried, and what decision is needed to proceed.
+    Multi-line prose explanation aimed at the orchestrator or user: what the
+    blocker is, what was tried, and what decision or correction is needed.
 ```
+
+| Field | Required | Notes |
+|---|---|---|
+| `reason` | yes | Short tag from the shared taxonomy below. A free string by convention — not enum-enforced by the orchestrator |
+| `details` | yes | Multi-line prose: the blocker, what was tried, and the intervention needed |
+
+### Shared escalation reason taxonomy
+
+The same tags are used here and by the reviewer in `review.escalation.reason` (see `../code-task-review/report-schema.md`), so an orchestrator can route both producers with one rule.
+
+| Reason | Use when |
+|---|---|
+| `spec_defect` | The task as written is logically inconsistent or unsatisfiable — internally (two requirements contradict), or against the codebase (references non-existent code, assumes wrong architecture) |
+| `spec_ambiguity` | The task is under-specified such that materially different implementations would all be defensible, and picking one would be a guess at intent |
+| `unrecoverable_state` | The change cannot be trusted as a base for further work. Primarily a reviewer-side reason |
+| `blocked_dependency` | A prerequisite outside this task's scope is missing — an earlier task's artifact, an external service, a library that does not exist |
+
+A defective or ambiguous task MUST be escalated, not worked around: implementing a guessed reading, or patching the spec's intent in code, leaves the specification and the code divergent with no reviewable record.
 
 ## `failure` block
 

@@ -17,6 +17,8 @@ findings:         # required — list of issues (may be empty)
   - ...
 ecosystem_reviews:  # required — record of ecosystem-specific reviewers run
   - ...
+escalation:       # present only when review.verdict == escalated
+  ...
 ```
 
 ## `review` block
@@ -26,7 +28,7 @@ review:
   task_file: .agents/tasks/template-feature/step02/task-01-create-data-models.code-task.md
   change_id: qrstuvwxyz       # jj change ID, /^[k-z]+$/
   reviewed_at: 2026-04-27T14:32:00Z       # ISO 8601, UTC
-  verdict: changes_requested              # approved | changes_requested | blocked
+  verdict: changes_requested              # approved | changes_requested | escalated
   schema_version: 2
   lsp_coverage: covered                   # covered | partial | unavailable
 ```
@@ -36,7 +38,7 @@ review:
 | `task_file` | yes | Path to the `.code-task.md` reviewed, relative to the repo root |
 | `change_id` | yes | Reviewed jj change ID matching `^[k-z]+$` |
 | `reviewed_at` | yes | UTC timestamp in ISO 8601 |
-| `verdict` | yes | One of `approved`, `changes_requested`, `blocked`. See SKILL.md §7 for the decision rule |
+| `verdict` | yes | One of `approved`, `changes_requested`, `escalated`. See SKILL.md §7 for the decision rule. `blocked` is **deprecated** — the reviewer no longer emits it (the orchestrator still accepts it so archived reports keep parsing) |
 | `schema_version` | yes | Must be `2` for this reviewer artifact |
 | `lsp_coverage` | yes | `covered` if every touched file got LSP diagnostics; `partial` if some did; `unavailable` if no LSP tool was reachable |
 
@@ -56,7 +58,7 @@ For a task under a plan, the title MUST end with a step/task reference of the fo
 
 ## Inline completion metadata
 
-The reviewer also emits the small YAML `spec-workflow-meta` locator with `schema_version: 1`. Its `status` describes successful report writing, so it MUST be `completed` for `approved`, `changes_requested`, and `blocked` reports; it does not mirror `review.verdict`. A complete fence may appear anywhere in the response, with prose before or after it; when multiple complete fences occur, the last complete fence is selected and an unterminated opening fence is ignored.
+The reviewer also emits the small YAML `spec-workflow-meta` locator with `schema_version: 1`. Its `status` describes successful report writing, so it MUST be `completed` for `approved`, `changes_requested`, and `escalated` reports alike; it does not mirror `review.verdict`. In particular, an `escalated` verdict is still a successfully written report — `status: failed` means the skill could not produce a report at all. A complete fence may appear anywhere in the response, with prose before or after it; when multiple complete fences occur, the last complete fence is selected and an unterminated opening fence is ignored.
 
 ~~~~text
 Review report written.
@@ -144,7 +146,7 @@ findings:
 
 | Severity | Meaning | Effect on verdict |
 |---|---|---|
-| `critical` | Blocks task completion. Examples: deleted tests without justification, security issue exploitable as written, an acceptance criterion entirely unmet, TDD evidence inconsistent with the commit | Forces `verdict: blocked` |
+| `critical` | Blocks task completion. Examples: deleted tests without justification, security issue exploitable as written, an acceptance criterion entirely unmet, TDD evidence inconsistent with the commit | Forbids `approved`; forces at least `verdict: changes_requested`. Only forces `escalated` when the underlying condition is *unrecoverable* or *spec-defective* (see the decision rule below) |
 | `important` | Should be fixed before the task is considered done. Examples: missing test for a **behavioral** criterion (`partial`), LSP errors in touched files, latent security risk. (Do NOT raise an `important` finding for a non-behavioral criterion merely lacking an automated test — verify it by inspection instead.) | Forces at least `verdict: changes_requested` |
 | `suggestion` | Improvement worth making but not blocking. Examples: refactoring opportunity, minor style drift | Does not change verdict |
 | `nit` | Trivial preference, not a real issue. Examples: comment phrasing, whitespace | Does not change verdict |
@@ -185,15 +187,50 @@ If no ecosystem reviewers are applicable, set this to an empty list:
 ecosystem_reviews: []
 ```
 
+## `escalation` block
+
+Present **iff** `review.verdict == escalated`, and absent otherwise. It mirrors the implementer's `escalation` block in `../task-to-code/result-schema.md` field-for-field.
+
+```yaml
+escalation:
+  reason: unrecoverable_state   # see the shared taxonomy below
+  details: |
+    Round 1 deleted tests/foo_test.py wholesale to force green; work.log has no
+    RED entry for the removed cases. The change cannot be trusted, and a further
+    rework round would build on a corrupted base.
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `reason` | yes | Short tag from the shared taxonomy below. A free string by convention — not enum-enforced by the orchestrator |
+| `details` | yes | Multi-line prose aimed at the orchestrator or a human: what the blocker is, what evidence supports it, and what intervention is needed |
+
+Both fields are required when the verdict is `escalated`; omitting the block, `reason`, or `details` makes the report invalid.
+
+### Shared escalation reason taxonomy
+
+The same tags are used by the reviewer here and by the implementer in `result.escalation.reason`, so an orchestrator can route both with one rule.
+
+| Reason | Use when |
+|---|---|
+| `spec_defect` | The task as written is logically inconsistent or unsatisfiable — e.g., two requirements contradict, or a criterion demands behavior the stated design forbids |
+| `spec_ambiguity` | The task is under-specified in a way that admits materially different implementations, and picking one would be a guess at intent |
+| `unrecoverable_state` | The produced change cannot be trusted as a base for further rework — e.g., wholesale test deletion or weakening to force green, or TDD evidence irreconcilable with the diff |
+| `blocked_dependency` | A prerequisite outside this task's scope is missing (an earlier task's artifact, an external service, a library that does not exist) |
+
 ## Verdict decision rule
 
-The reviewer sets `verdict` mechanically from the findings and acceptance-criteria statuses:
+The reviewer sets `verdict` mechanically, checking the conditions in order and taking the first that matches:
 
-| Condition | Verdict |
-|---|---|
-| Any `critical` finding present | `blocked` |
-| Any `important` finding, or any AC with status `fail` / `partial` | `changes_requested` |
-| Otherwise (only `suggestion`/`nit` findings; all ACs `pass` or `not_verified` with justification) | `approved` |
+| Order | Condition | Verdict |
+|---|---|---|
+| 1 | The loop cannot usefully continue: the change is in an **unrecoverable state**, or the task itself is **spec-defective / ambiguous** | `escalated` (+ `escalation` block) |
+| 2 | Any `critical` or `important` finding, or any AC with status `fail` / `partial` — and the implementer could reasonably fix it in another round | `changes_requested` |
+| 3 | Otherwise (only `suggestion`/`nit` findings; all ACs `pass` or `not_verified` with justification) | `approved` |
+
+A `critical` finding therefore blocks *approval*, not the *loop*: a genuine-but-fixable critical bug is `changes_requested`, which the orchestrator auto-reworks. Reserve `escalated` for the cases in row 1, where another rework round would be wasted or would build on a corrupted base.
+
+`blocked` is deprecated and MUST NOT be emitted. The orchestrator still accepts and terminates on it so archived reports keep parsing.
 
 Orchestrators can rely on this rule to route reports without re-reading the findings.
 
@@ -232,4 +269,63 @@ acceptance_criteria:
 findings: []
 
 ecosystem_reviews: []
+```
+
+## Minimal example (escalated)
+
+```yaml
+review:
+  task_file: .agents/tasks/template-feature/step02/task-03-add-quota-check.code-task.md
+  change_id: qrstuvwxyz
+  reviewed_at: 2026-04-27T18:05:00Z
+  verdict: escalated
+  schema_version: 2
+  lsp_coverage: covered
+
+merge_request:
+  title: "feat(quota): enforce per-tenant request quota [Quota Limits: Step 02/Task 03]"
+  body: |
+    Reviews the initial implementation and one rework change adding per-tenant
+    quota enforcement. Escalated: the task's acceptance criteria are mutually
+    inconsistent and cannot all be satisfied.
+
+summary: |
+  AC2 requires rejecting requests once a tenant exceeds its quota, while AC4
+  requires that no request is ever rejected for a tenant on the trial plan —
+  and trial tenants have a quota of zero. No implementation can satisfy both.
+  The implementation is otherwise clean; the task needs correcting first.
+
+acceptance_criteria:
+  - text: "Requests over a tenant's quota are rejected with HTTP 429"
+    status: pass
+    evidence: tests/quota_test.py:31-58 asserts 429 past the limit.
+  - text: "Trial-plan tenants are never rejected for quota"
+    status: fail
+    evidence: |
+      Unsatisfiable together with AC2: src/plans.py:12 gives trial tenants
+      quota 0, so every trial request is over quota.
+
+findings:
+  - severity: critical
+    category: acceptance_criteria
+    file: .agents/tasks/template-feature/step02/task-03-add-quota-check.code-task.md
+    line: null
+    title: AC2 and AC4 are mutually unsatisfiable
+    details: |
+      AC2 mandates rejection above quota; AC4 forbids rejecting trial tenants,
+      whose quota is 0 (src/plans.py:12). No implementation satisfies both.
+    suggested_action: |
+      Correct the task: either exempt trial tenants from quota accounting, or
+      give them a non-zero trial quota, then re-run the implementation.
+    source: built-in
+
+ecosystem_reviews: []
+
+escalation:
+  reason: spec_defect
+  details: |
+    Acceptance criteria AC2 and AC4 contradict each other given the trial-plan
+    quota of 0 defined at src/plans.py:12. This is not fixable by another rework
+    round — the task specification must be corrected before implementation can
+    proceed.
 ```

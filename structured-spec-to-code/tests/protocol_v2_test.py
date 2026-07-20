@@ -11,6 +11,9 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests" / "fixtures" / "protocol-v2"
 CHANGE_ID = re.compile(r"^[k-z]+$")
+TAXONOMY = frozenset(
+    {"spec_defect", "spec_ambiguity", "unrecoverable_state", "blocked_dependency"}
+)
 
 
 def load_fixture(name):
@@ -49,7 +52,7 @@ class ProtocolV2FixturesTest(unittest.TestCase):
         )
 
     def test_all_review_verdicts_keep_v2_change_and_merge_request_content(self):
-        expected = {"approved", "changes_requested", "blocked"}
+        expected = {"approved", "changes_requested", "escalated", "blocked"}
         seen = set()
         for path in sorted(FIXTURES.glob("review-*.yaml")):
             review = load_fixture(path.name)
@@ -80,13 +83,56 @@ class ProtocolV2FixturesTest(unittest.TestCase):
         })
         self.assertTrue(result_after.strip())
 
-        for name in ("approved", "changes-requested", "blocked"):
+        for name in ("approved", "changes-requested", "blocked", "escalated"):
             review_meta, review_after = metadata(
                 (FIXTURES / f"review-{name}.finaltext.txt").read_text()
             )
             self.assertEqual(review_meta["status"], "completed")
             self.assertEqual(review_meta["schema_version"], 1)
             self.assertTrue(review_after.strip())
+
+    def test_escalated_review_carries_a_reason_and_details_block(self):
+        review = load_fixture("review-escalated.yaml")
+
+        self.assertEqual(review["review"]["verdict"], "escalated")
+        escalation = review["escalation"]
+        self.assertIn(escalation["reason"], TAXONOMY)
+        self.assertTrue(escalation["details"].strip())
+
+    def test_escalation_block_is_present_iff_verdict_is_escalated(self):
+        for path in sorted(FIXTURES.glob("review-*.yaml")):
+            review = load_fixture(path.name)
+            escalated = review["review"]["verdict"] == "escalated"
+            self.assertEqual(
+                "escalation" in review, escalated, f"{path.name} escalation block"
+            )
+
+    def test_a_fixable_critical_finding_is_changes_requested_not_terminal(self):
+        review = load_fixture("review-critical-fixable.yaml")
+        severities = {finding["severity"] for finding in review["findings"]}
+
+        self.assertIn("critical", severities)
+        self.assertEqual(review["review"]["verdict"], "changes_requested")
+        self.assertNotIn("escalation", review)
+
+    def test_both_producers_document_the_shared_escalation_taxonomy(self):
+        result_schema = (ROOT / "task-to-code" / "result-schema.md").read_text()
+        report_schema = (ROOT / "code-task-review" / "report-schema.md").read_text()
+
+        for text in (result_schema, report_schema):
+            for reason in TAXONOMY:
+                self.assertIn(reason, text)
+
+    def test_reviewer_no_longer_emits_the_deprecated_blocked_verdict(self):
+        reviewer = (ROOT / "code-task-review" / "SKILL.md").read_text()
+        report_schema = (ROOT / "code-task-review" / "report-schema.md").read_text()
+
+        self.assertIn("MUST NOT emit `verdict: blocked`", reviewer)
+        self.assertIn("deprecated", report_schema)
+        # The archived-report fixture must still parse: awo keeps accepting it.
+        self.assertEqual(
+            load_fixture("review-blocked.yaml")["review"]["verdict"], "blocked"
+        )
 
     def test_contracts_state_stable_jj_and_completion_rules(self):
         implementer = (ROOT / "task-to-code" / "SKILL.md").read_text()
