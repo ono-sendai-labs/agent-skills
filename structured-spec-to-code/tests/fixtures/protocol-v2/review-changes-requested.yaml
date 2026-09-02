@@ -6,7 +6,7 @@ review:
   schema_version: 2
   lsp_coverage: covered
 merge_request:
-  title: "feat(example): finish implementation [Enhancement Step 02/Task 01]"
+  title: "feat(example): finish implementation [Enhancement: Step 02/Task 01]"
   body: |
     Reviews the initial implementation and identifies the follow-up needed in
     the next fresh rework change.

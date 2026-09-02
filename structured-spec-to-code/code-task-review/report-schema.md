@@ -54,7 +54,12 @@ merge_request:
     the complete task series, including their tests and validation evidence.
 ```
 
-For a task under a plan, the title MUST end with a step/task reference of the form `[<Topic>: Step NN/Task NN]`. For a standalone interactive task, it MUST end with `[<Topic> Task NN]`. The suffix is a workflow task reference, not a verdict or change ID.
+The title MUST end with a task reference of the form `[<Topic>: <task-ref>]`, where `<Topic>` is a short (2–3 word) name for the epic or feature the work belongs to, and `<task-ref>` is `Step NN/Task NN` for a task under a plan or `Task NN` for a standalone interactive task. The suffix is a workflow task reference, not a verdict or change ID.
+
+```
+[Escalation Remediation: Step 01/Task 01]     # planned
+[Escalation Remediation: Task 01]             # standalone
+```
 
 ## Inline completion metadata
 
@@ -246,7 +251,7 @@ review:
   lsp_coverage: covered
 
 merge_request:
-  title: "feat(models): add validated data models [Enhancement Task 01]"
+  title: "feat(models): add validated data models [Enhancement: Task 01]"
   body: |
     Reviews the complete initial implementation and all subsequent rework
     changes, including tests and validation evidence.
