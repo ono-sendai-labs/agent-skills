@@ -1,0 +1,38 @@
+review:
+  task_file: .agents/tasks/example/task-02-example.code-task.md
+  change_id: uvwxyz
+  reviewed_at: 2026-07-18T12:00:00Z
+  verdict: changes_requested
+  schema_version: 2
+  lsp_coverage: covered
+merge_request:
+  title: "feat(example): parse config file [Enhancement Task 02]"
+  body: |
+    Reviews the complete implementation series. A genuine but fixable critical
+    defect is recorded for the implementer to address in a rework round.
+summary: |
+  The parser satisfies both acceptance criteria, but interpolates user input
+  directly into a shell command — exploitable as written. The defect is
+  contained and fixable by the implementer, so this is changes_requested.
+acceptance_criteria:
+  - text: config files are parsed into a typed structure
+    status: pass
+    evidence: tests/config_test.py:20 covers the parse path.
+  - text: malformed config is rejected with a clear error
+    status: pass
+    evidence: tests/config_test.py:58 asserts the validation error.
+findings:
+  - severity: critical
+    category: security
+    file: src/config.py
+    line: 44
+    title: Config path interpolated into a shell command
+    details: |
+      src/config.py:44 builds a shell command by string interpolation of the
+      user-supplied config path, allowing command injection.
+    suggested_action: |
+      Pass the path as an argument vector via subprocess.run([...]) instead of
+      interpolating into a shell string, and add a test covering a path
+      containing shell metacharacters.
+    source: built-in
+ecosystem_reviews: []

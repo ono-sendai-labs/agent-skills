@@ -1,0 +1,9 @@
+Review written for the escalated verdict.
+
+```spec-workflow-meta
+status: completed
+result_path: .agents/scratchpad/example/review.yaml
+schema_version: 1
+```
+
+An escalated verdict is still a successfully written report.

@@ -25,13 +25,27 @@ Autonomously implement a code task using TDD principles: Explore the codebase an
 
 ## Escalation Policy
 
-This workflow runs autonomously. Escalate to the user ONLY when:
-- The task description is inconsistent with the actual codebase (e.g., references non-existent code, assumes wrong architecture)
+This workflow runs autonomously. Escalate ONLY when:
+- **The task cannot be satisfied as written** — a logical inconsistency prevents implementation. This covers the task being inconsistent with the actual codebase (references non-existent code, assumes wrong architecture) *and* the task being internally inconsistent (two requirements contradict, or a criterion demands behavior another criterion or the stated design forbids). Escalate with `reason: spec_defect`.
+- **The task is ambiguous** in a way that admits materially different implementations, so choosing one would be a guess at intent. Escalate with `reason: spec_ambiguity`. This includes a design decision with significant trade-offs the task does not address.
+- **A prerequisite outside this task's scope is missing** — an earlier task's artifact, an external service, a library that does not exist. Escalate with `reason: blocked_dependency`.
 - Required information is missing and cannot be reasonably inferred
 - Tests or builds fail repeatedly and you cannot resolve the root cause
-- A design decision has significant trade-offs that the task doesn't address
 
-When escalating, clearly describe the blocker, what you've tried, and what decision you need.
+You MUST NOT silently work around a defective or ambiguous task — do not patch the spec's intent in code, and do not pick one reading of a contradiction and implement it. The escalation is what lets the orchestrator correct the specification with an auditable record; an inline workaround leaves spec and code divergent.
+
+When escalating, emit `result.yaml` with `status: escalated` and a populated `escalation` block: a `reason` from the shared taxonomy below, plus `details` clearly describing the blocker, what you tried, and what decision or correction you need.
+
+### Shared escalation reason taxonomy
+
+These tags are shared with the `code-task-review` reviewer (see `../code-task-review/report-schema.md`), so an orchestrator can route both producers with one rule. They are a documented convention — not enum-enforced.
+
+| Reason | Use when |
+|---|---|
+| `spec_defect` | The task as written is logically inconsistent or unsatisfiable — internally, or against the codebase |
+| `spec_ambiguity` | The task is under-specified such that materially different implementations would all be defensible |
+| `unrecoverable_state` | The change under work cannot be trusted as a base for further work (primarily a reviewer-side reason) |
+| `blocked_dependency` | A prerequisite outside this task's scope is missing |
 
 ## Steps
 
@@ -60,7 +74,7 @@ Analyze requirements and research existing patterns in the codebase.
 - You MUST identify interfaces, libraries, and components the implementation will interact with
 - You SHOULD create a dependency map showing how the new code will integrate, when the task involves multiple components
 - You MUST update context.md with requirements, patterns, dependencies, and implementation paths
-- If you discover inconsistencies between the task and the actual codebase, you MUST escalate to the user
+- If you discover that the task cannot be satisfied as written — whether inconsistent with the actual codebase or internally contradictory — you MUST escalate per the Escalation Policy (`reason: spec_defect`), rather than reinterpreting the requirement
 - You SHOULD identify similar implementations in the codebase to follow established patterns
 - You SHOULD consult the codebase summary at `{agents_dir}/summary/` if available, to understand broader system context — especially useful for tasks without a design document
 - You SHOULD read `{agents_dir}/summary/coding_style.md` if it exists, and record the applicable conventions and representative examples in context.md — this is the primary style reference for the GREEN and REFACTOR phases
@@ -195,7 +209,7 @@ After committing, write a canonical `result.yaml` to the scratchpad and close th
 - You MUST write `{scratchpad}/result.yaml` conforming to the v2 schema in `result-schema.md` (sibling file). Required fields: `result.task_file`, `result.change_id`, `result.status`, `result.schema_version: 2`, `result.produced_at` as ISO 8601 UTC; `acceptance_criteria` list with `text`/`addressed`/`evidence` per criterion; `artifacts.scratchpad_dir` and `artifacts.files`; `escalation` block iff `status == escalated`; `failure` block iff `status == failed`; `notes` always present. A completed result MUST contain a valid jj change ID matching `^[k-z]+$`; failed/escalated results may use a null change ID. The authoritative field definitions, status semantics, and examples are in `result-schema.md`.
 - You MUST set `result.status` as follows:
   - `completed` — implementation done, tests pass, a fresh jj change was produced, and `result.change_id` is populated with its valid stable change ID
-  - `escalated` — you escalated to the user per the Escalation Policy; `escalation` block populated with `reason` and `details`
+  - `escalated` — you escalated per the Escalation Policy; `escalation` block populated with `details` and a `reason` from the shared taxonomy (`spec_defect` | `spec_ambiguity` | `unrecoverable_state` | `blocked_dependency`)
   - `failed` — you attempted but cannot produce a working change; `failure` block populated with `category` and `details`
 - You MUST populate `acceptance_criteria` with one entry per criterion in the task file, setting `addressed: yes | partial | no` and citing specific evidence in `evidence`. For behavioral criteria cite the test (file:line or test name) and implementation; for non-behavioral criteria cite the artifact-inspection evidence (a file:line or quoted excerpt) rather than a test name — a non-behavioral criterion is `addressed: yes` when the artifact demonstrably satisfies it, with no test required.
 - You MUST include a `notes` field (always present) with a 2–4 sentence prose summary of the iteration.
@@ -243,7 +257,9 @@ After producing the fresh commit, re-emit the structured result per Step 6:
 
 #### 7.4 Escalation During Rework
 
-If you cannot address a `critical` finding — for example, the finding contradicts the task's stated intent, or fixing it requires design changes outside your scope — you MUST escalate per the Escalation Policy. Emit `result.yaml` with `status: escalated` and the `escalation` block populated. Do NOT silently approve a finding you cannot fix, and do NOT strip findings from the rework round's evidence.
+If you cannot address a `critical` finding — for example, the finding contradicts the task's stated intent, or fixing it requires design changes outside your scope — you MUST escalate per the Escalation Policy. Emit `result.yaml` with `status: escalated` and the `escalation` block populated, choosing the `reason` that fits: `spec_defect` when the finding and the task cannot both be satisfied, `spec_ambiguity` when the correct resolution depends on unstated intent, `blocked_dependency` when the fix needs something outside this task's scope.
+
+Do NOT silently approve a finding you cannot fix, do NOT strip findings from the rework round's evidence, and do NOT resolve a spec contradiction by quietly changing what the code does relative to the task — that divergence is exactly what the escalation exists to prevent.
 
 ## Examples
 

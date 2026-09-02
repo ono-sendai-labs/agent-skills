@@ -37,12 +37,26 @@ The report format is defined in `report-schema.md` (sibling file). Findings carr
 
 ## Escalation Policy
 
-This skill does not block on findings — findings go in the report. This holds for both initial and re-review rounds. Escalate to the user ONLY when:
+There are two distinct escalation channels, and you MUST NOT conflate them.
+
+**1. The `escalated` verdict — a successfully written report that stops the loop.**
+
+You can review the change and produce a complete report, but another rework round would be wasted or harmful. Emit `verdict: escalated` with a populated `escalation` block (`reason` + `details`) ONLY when:
+- **Unrecoverable state** (`reason: unrecoverable_state`) — the produced change cannot be trusted as a base for further rework, e.g. tests deleted or weakened wholesale to force green, or TDD evidence irreconcilable with the diff.
+- **Spec defect or ambiguity** (`reason: spec_defect` / `spec_ambiguity`) — the task as written cannot be satisfied: requirements contradict one another, or the task is under-specified such that any implementation is a guess at intent.
+
+This is still a `status: completed` report — the report was written; the *task* needs intervention. See the shared reason taxonomy in `report-schema.md`.
+
+**2. Cannot produce a report at all — escalate to the user / orchestrator.**
+
+This is not a verdict; no valid report exists. Escalate this way ONLY when:
 - The current jj change ID cannot be resolved
 - The task file or scratchpad is missing or malformed in a way that prevents review
 - The current change cannot be inspected (jj errors, missing parent, etc.)
 
-Do NOT escalate because findings are severe — record them in the report and let the orchestrator decide.
+In this case emit `spec-workflow-meta` with `status: failed`.
+
+**Do NOT escalate — by either channel — merely because findings are severe.** A genuine but fixable `critical` finding is `changes_requested`; the orchestrator auto-reworks it. Record findings in the report and let the orchestrator route them.
 
 ## Steps
 
@@ -152,15 +166,17 @@ Write a single YAML file at `{report_path}` conforming to the schema in `report-
 
 **Constraints:**
 - You MUST follow the schema in `report-schema.md` exactly — field names, allowed values, required fields
-- You MUST set `verdict`:
+- You MUST set `verdict` by checking these conditions in order and taking the first that matches:
+  - `escalated` if the loop cannot usefully continue — the change is in an **unrecoverable state** (e.g. tests deleted or weakened wholesale to force green), or the task itself is **spec-defective / ambiguous** (requirements contradict, or the task cannot be satisfied as written). You MUST also populate the top-level `escalation` block with a `reason` from the shared taxonomy (`unrecoverable_state` | `spec_defect` | `spec_ambiguity` | `blocked_dependency`) and `details` explaining the blocker and the intervention needed.
+  - `changes_requested` if there are `critical` or `important` findings, or `partial`/`fail` acceptance criteria, and the implementer could reasonably fix them in another round
   - `approved` if no `critical` or `important` findings, and all acceptance criteria are `pass`
-  - `changes_requested` if there are `important` findings or `partial`/`fail` acceptance criteria but the task is salvageable with edits
-  - `blocked` if `critical` findings indicate the task should not be considered complete (e.g., test deletion without justification, security issue, criterion entirely unmet)
+- A `critical` finding blocks *approval*, not the *loop*. You MUST NOT escalate a genuine-but-fixable critical bug — emit `changes_requested` and let the orchestrator rework it. `critical` still forbids `approved`.
+- You MUST NOT emit `verdict: blocked`. It is deprecated; the orchestrator still accepts it only so archived reports keep parsing.
 - You MUST include a `summary` field with a 2–4 sentence prose summary suitable for a human reader. On a re-review, the `summary` SHOULD reflect prior-finding resolution (e.g., "All three prior findings resolved in the new jj change; one new style suggestion in models.py introduced during the rework.").
 - You MUST sort `findings` by severity (`critical` first), then by file path
 - You MUST emit valid YAML — quote strings containing special characters, use block scalars (`|`) for multi-line content
 - You MUST overwrite any existing report at `{report_path}`. The report is always a fresh, self-contained report on the **current** commit — not a delta or patch. (The orchestrator preserves prior cycles' copies in the run directory before allowing the next cycle to start.)
-- Every successfully written report, including `approved`, `changes_requested`, and `blocked`, MUST include non-blank `merge_request.title` and `merge_request.body`. The title MUST describe the complete change series and end with a task reference of the form `[<Topic>: Step NN/Task NN]` for a planned task or `[<Topic>: Task NN]` for a standalone interactive task; where `<Topic>` is a short (2-3 word) reference to the epic, feature/enhancement, etc which the step/task is part of. The body MUST summarize the initial implementation and every subsequent rework change.
+- Every successfully written report, including `approved`, `changes_requested`, and `escalated`, MUST include non-blank `merge_request.title` and `merge_request.body`. The title MUST describe the complete change series and end with a task reference of the form `[<Topic>: Step NN/Task NN]` for a planned task or `[<Topic>: Task NN]` for a standalone interactive task; where `<Topic>` is a short (2-3 word) reference to the epic, feature/enhancement, etc which the step/task is part of. The body MUST summarize the initial implementation and every subsequent rework change.
 - After writing the report, you MUST report to the user (or calling orchestrator) the report path and the verdict; do not paste the entire report into the response.
 - After writing the report, you MUST emit a complete fenced block whose info string is exactly `spec-workflow-meta` (not bare `yaml`) carrying `status: completed`, `result_path`, and `schema_version: 1`. This locator means the report was written successfully, regardless of verdict. The complete fence may appear anywhere in the response, with prose before or after it; if multiple complete fences appear, the parser selects the last complete one. Use `status: failed` only if the skill could not produce a valid report. The format and parser rules are defined in `../task-to-code/result-schema.md`.
 
@@ -263,7 +279,8 @@ If no LSP-diagnostic tool is available in the harness:
 ### Conflicting Evidence Between work.log and Diff
 If `work.log` claims a test exists but the diff shows it removed (or vice versa):
 - You MUST treat this as a `critical` finding under category `tests`, titled "TDD evidence inconsistent with change"
-- The orchestrator should re-open the task
+- If the discrepancy is narrow and the implementer can plausibly restore the coverage, emit `changes_requested` and say so in `suggested_action`
+- If tests were deleted or weakened wholesale — such that the change cannot be trusted as a base for further rework — emit `verdict: escalated` with `reason: unrecoverable_state`
 
 ## Artifacts
 

@@ -96,7 +96,7 @@ Account for findings raised by `code-task-review` that may not have been address
 - For each task that has a `review.yaml`, you MUST inspect its `findings` and `verdict`
 - You MUST identify any `important` or `critical` findings whose `suggested_action` does not appear to have been carried out (cross-check against the current code)
 - You MUST surface unresolved findings as new findings in the implementation review report, category `unresolved_review_findings`, citing the original task and finding
-- A task with `verdict: blocked` but no subsequent fix commit is by itself a `critical` finding
+- A task whose final `review.yaml` has `verdict: escalated` (or the deprecated `verdict: blocked`, in archived reports) but no subsequent fix commit is by itself a `critical` finding
 
 ### 6. Discover and Invoke Ecosystem Reviewers
 

@@ -15,7 +15,8 @@ graph TD
     D -->|code task files| E[task-to-code]
     E -->|commit| R1[code-task-review]
     R1 -->|approved| F{More steps?}
-    R1 -->|changes_requested / blocked| E
+    R1 -->|changes_requested| E
+    R1 -->|escalated| X[Correct the task/spec, then re-run]
     F -->|yes| D
     F -->|no| R2[implementation-review]
     R2 -->|clean| G[Done]
@@ -47,7 +48,8 @@ Check for existing artifacts to determine where the user is in the pipeline:
 | `{project_dir}/implementation/plan.md` exists with unchecked items | Plan exists, tasks not yet generated for next step | plan-to-tasks |
 | `{agents_dir}/tasks/{project_name}/step{NN}/` contains `.code-task.md` files | Tasks generated, ready to implement | task-to-code |
 | `task-to-code` just committed and `{scratchpad}/review.yaml` does not exist for that task | Task implemented, not yet reviewed | code-task-review |
-| `{scratchpad}/review.yaml` has `verdict: changes_requested` or `verdict: blocked` | Review surfaced issues to address | task-to-code (in remediation mode, addressing the findings) |
+| `{scratchpad}/review.yaml` has `verdict: changes_requested` | Review surfaced fixable issues (including fixable `critical` findings) | task-to-code (in remediation mode, addressing the findings) |
+| `{scratchpad}/review.yaml` has `verdict: escalated` | The loop cannot usefully continue — the change is unrecoverable, or the task itself is defective/ambiguous (see `escalation.reason`) | Correct the task/spec first, then re-run `task-to-code`; do not rework against the defective task |
 | All plan checklist items complete and `{project_dir}/implementation/review.yaml` does not exist | Implementation complete, not yet reviewed at the project scope | implementation-review |
 | `{project_dir}/implementation/review.yaml` has `verdict: remediation_recommended` or `remediation_required` and the generated remediation step is unchecked | Implementation reviewed, remediation tasks queued | task-to-code (on the new remediation step's tasks) |
 | All plan checklist items complete and `{project_dir}/implementation/review.yaml` has `verdict: clean` | Pipeline complete for this project | Done — suggest next iteration |
@@ -60,7 +62,7 @@ Check for existing artifacts to determine where the user is in the pipeline:
 4. Run **design-to-plan** → produces `{project_dir}/implementation/plan.md`
 5. For each step in the plan:
    a. Run **plan-to-tasks** → produces `{agents_dir}/tasks/{project_name}/step{NN}/` with code task files
-   b. For each task file: run **task-to-code** → committed code → **code-task-review** → if `changes_requested`/`blocked`, re-enter `task-to-code` to address findings, then re-review
+   b. For each task file: run **task-to-code** → committed code → **code-task-review** → if `changes_requested`, re-enter `task-to-code` to address findings, then re-review. If `escalated`, stop the loop and correct the task/spec before re-running
 6. Repeat 5a-5b until all plan steps are complete
 7. Run **implementation-review** → if remediation is needed, the skill writes new task files and a new step into the plan; resume from step 5b for that step. If `clean`, the project is done
 

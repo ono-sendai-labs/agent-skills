@@ -1,0 +1,40 @@
+review:
+  task_file: .agents/tasks/example/task-03-example.code-task.md
+  change_id: uvwxyz
+  reviewed_at: 2026-07-18T15:30:00Z
+  verdict: escalated
+  schema_version: 2
+  lsp_coverage: covered
+merge_request:
+  title: "feat(example): enforce quota [Enhancement Task 03]"
+  body: |
+    Reviews the complete implementation series and records the specification
+    defect that prevents the task from being satisfied as written.
+summary: |
+  The task's acceptance criteria are mutually unsatisfiable, so no
+  implementation can pass review. The specification must be corrected before
+  the loop can usefully continue.
+acceptance_criteria:
+  - text: requests over quota are rejected
+    status: pass
+    evidence: tests/quota_test.py:31 asserts rejection past the limit.
+  - text: trial tenants are never rejected
+    status: fail
+    evidence: Unsatisfiable together with the preceding criterion; trial quota is 0.
+findings:
+  - severity: critical
+    category: acceptance_criteria
+    file: .agents/tasks/example/task-03-example.code-task.md
+    title: Acceptance criteria are mutually unsatisfiable
+    details: |
+      One criterion mandates rejection above quota; another forbids rejecting
+      trial tenants, whose quota is 0. No implementation satisfies both.
+    suggested_action: Correct the task, then re-run the implementation.
+    source: built-in
+ecosystem_reviews: []
+escalation:
+  reason: spec_defect
+  details: |
+    The acceptance criteria contradict each other given a trial quota of 0.
+    Another rework round would be wasted; the task specification must be
+    corrected first.
