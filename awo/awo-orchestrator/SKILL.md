@@ -69,27 +69,79 @@ For each task file in order:
 
 **Constraints:**
 - You MUST run `{run_task_cmd} {task_file}` as a background task and wait for it.
-- awo writes a run directory at `.agents/runs/{timestamp}-task-{MM}-{task_slug}/`. Note that these directory names carry no step number, so identify the current run by timestamp. It contains `orchestrator.log` (terse JSONL progress) plus `implementer/` and `reviewer/` subdirectories holding each round's `result.yaml` / `review.yaml`.
+- awo writes a run directory at `.agents/runs/{timestamp}-task-{MM}-{task_slug}/`. Note that these directory names carry no step number, so identify the current run by timestamp. It contains:
+
+```
+task-state.json                       — the canonical per-task record: base, ordered
+                                        produced changes, checkpoints, terminal outcome
+                                        (incl. outcome.error / outcome.error_code)
+orchestrator.log                      — terse JSONL progress
+implementer/results/round-{N}.yaml    — each round's archived result.yaml
+reviewer/reviews/round-{N}.yaml       — each round's archived review.yaml
+```
+
 - You MUST read the printed terminal status and route on it:
 
 | Status | Meaning | Action |
 |---|---|---|
-| `APPROVED` | Reviewer approved the change series | Proceed to §3.3 |
+| `APPROVED` | Reviewer approved the change series, and awo finalized it | Proceed to §3.3 |
 | `ESCALATED` | Implementer or reviewer stopped the loop deliberately | Go to §Escalation Handling |
-| `REWORK_CAP` | Rounds exhausted without approval | Read the last `review.yaml`. If the outstanding findings are genuinely deferrable, record them in `work_log` and proceed; otherwise treat as a block and stop |
+| `REWORK_CAP_HIT` | Rounds exhausted without approval | Read the last `reviewer/reviews/round-{N}.yaml`. If the outstanding findings are genuinely deferrable, record them in `work_log` and proceed; otherwise treat as a block and stop |
+| `ORCH_ABORTED` | awo itself stopped: a preflight, topology, or finalization invariant did not hold. Never a verdict about the code | Go to §3.2a |
 | `BLOCKED` | Deprecated reviewer verdict, from an older build | Read the report and treat it as `ESCALATED` |
 | `FAILED` / other | Transient or harness failure | Investigate; a quick, non-destructive fix and re-run is fine. Otherwise stop and ask |
 
 - You MUST NOT edit the produced code yourself to make a task pass. Route it back through awo, or escalate.
 
-#### 3.3 Bookmark the Produced Changes
+#### 3.2a Handling `ORCH_ABORTED`
+
+An abort is a statement about the *repository or the run*, not about the work. Changes awo
+already committed are intact — recovery is diagnosis, never `jj abandon`.
+
+**Constraints:**
+- You MUST read `task-state.json` in the run directory first: `outcome.error_code` and
+  `outcome.error` name the failed invariant, and `produced_changes` tells you exactly which
+  changes exist. Cross-check with `jj log`.
+- You MUST classify before acting:
+  - **Aborted at preflight** (`bookmark_collision`, a preflight topology code, no produced
+    changes): nothing ran. Clear the stated condition — most often a PR bookmark left by an
+    earlier approval of the same task — and re-run §3.2 unchanged.
+  - **Aborted mid-loop, with produced changes**: the work exists but was never carried to a
+    verdict. Do not treat it as approved. Resume it through awo with a seeded review per §E.4
+    and §E.5, whose finding states plainly that the prior round aborted before review and asks
+    for verification against every acceptance criterion.
+  - **Aborted at finalization, after an approval**: the reviewer approved and the changes are
+    committed; only the bookmark/description step failed. Record it, fix the stated cause, and
+    bookmark the tip yourself per §3.3.
+- You MUST record the abort, its `error_code`, and your classification in `work_log`.
+- You MUST NOT edit the produced code to clear an abort, and MUST NOT re-run a task on top of
+  its own completed work — the implementer would find nothing to do and awo would abort again
+  on an empty result.
+
+#### 3.3 Confirm the Produced Changes Are Bookmarked
 
 The loop leaves one change per round — the initial implementation plus one per rework round.
+
+On approval **awo finalizes the stack itself**: it describes the oldest produced change with the
+review's merge-request title and body, and creates the task bookmark on the newest one. The name
+it derives is the task file's path under `.agents/tasks/`, prefixed with `pr/` and stripped of
+`.md` — i.e. exactly `pr/{planning_slug}/step{NN}/task-{MM}-{task_slug}.code-task`. Creating that
+bookmark yourself after an `APPROVED` run collides with awo's.
 
 **Constraints:**
 - You MUST verify `@` is empty; commit stray files if present.
 - You MUST note the change ID of `@-`, the last change the loop produced.
-- You MUST bookmark `@-` as `pr/{planning_slug}/step{NN}/task-{MM}-{task_slug}.code-task`, with `jj bookmark create`. These bookmarks are what PR generation consumes, so the name must match exactly.
+- You MUST verify that `@-` carries `pr/{planning_slug}/step{NN}/task-{MM}-{task_slug}.code-task`
+  (`jj log -r @- -T 'self.local_bookmarks()'`). After an `APPROVED` run it will. These bookmarks
+  are what PR generation consumes, so the name must match exactly.
+- You MUST create it yourself, with `jj bookmark create`, **only** when awo did not finalize —
+  i.e. when you are proceeding past an `ORCH_ABORTED` per §3.2a on work you have decided to
+  accept. Record that provenance in `work_log`: a hand-made bookmark means awo never verified
+  the finalized stack.
+- If awo's own `create` failed because the name was taken, do not switch to `jj bookmark set`.
+  Find what holds the name (`jj log -r 'bookmarks(<name>)'`) and stop and ask, unless the holder
+  is a superseded tip of *this same task's* series — in which case say so explicitly in
+  `work_log` before moving the label onto the true tip.
 
 #### 3.4 Update the Work Log
 
@@ -214,7 +266,9 @@ ecosystem_reviews: []
 
 ### E.5 Resume with `awo rework`
 
-`awo rework` identifies the task from the seed review's `review.task_file`; it takes no positional task-file argument. It needs the seed review plus the change series to resume from, in one of two equivalent forms:
+`awo rework` identifies the task from the seed review's `review.task_file`; no positional task-file
+argument is needed (one is accepted as an override, and must then name the same file). It needs the
+seed review plus the change series to resume from, in one of two equivalent forms:
 
 ```sh
 # Explicit form: base + produced changes, oldest-to-newest
@@ -229,8 +283,9 @@ ecosystem_reviews: []
 **Constraints:**
 - You MUST resume with `{rework_task_cmd}`, passing `--seed-review <path to the injected review>` plus either `--base <S>` with the ordered `--produced-change` list (oldest-to-newest), or `--task-state <path>`. The wrapper supplies the project's harness/model/effort flags; you supply the resume arguments.
 - The `--base` MUST be the interposed spec commit `S` from §E.3, so the reworked round descends from the corrected spec. Pass the produced changes `I1′ … In′` in oldest-to-newest order.
-- awo pre-flights the resume: `@` must be empty and childless, `@-` must be described/bookmarked, and the produced changes must descend from the given base. A pre-flight error means your topology from §E.3 is wrong — re-inspect with `jj log`; do not force it.
-- The seeded round is a **rework** round: the implementer reads the injected review and produces a fresh child change. Subsequent rounds are the normal loop under `--max-rework-rounds`.
+- Change IDs may be given in jj's abbreviated form; awo resolves them and records the full IDs. The seed review's `change_id` and the newest `--produced-change` need only denote the same change, not be spelled the same length.
+- awo pre-flights the resume: `@` must be empty and childless, `@-` must be described/bookmarked, the produced changes must descend from the given base, and the task's PR bookmark must still be free. A pre-flight error means your topology from §E.3 is wrong — re-inspect with `jj log`; do not force it.
+- The seeded round is a **rework** round: the implementer reads the injected review and produces a fresh child change. Subsequent rounds are the normal loop under `--max-rework-rounds`, which budgets the rounds *this invocation* may run: the carried series does not consume it, so a long series never caps a resume before it starts.
 - When it returns, you MUST route on its terminal status exactly as in §3.2. A second escalation on the same task after a repair is a stop-and-ask condition — do not repair twice in a row.
 - On approval, continue at §3.3. The task's bookmark goes on the final tip; the spec commit keeps its own bookmark, and both appear in the log as separate, reviewable changes.
 - You MUST record the whole sequence in `work_log`: the escalation reason, your boundary judgement, the spec commit and its bookmark, and the rework outcome.
@@ -296,6 +351,12 @@ Run directories carry no step number. Identify the current one by timestamp, and
 ### `awo rework` pre-flight fails
 The resume contract requires an empty `@` and a produced series descending from the given base. Re-inspect with `jj log` and fix the topology (§E.3); do not work around the pre-flight. A base mismatch usually means the interpose targeted the wrong change.
 
+### `ORCH_ABORTED` with `error_code: bookmark_collision`
+The task's PR bookmark already exists, so the run could never be finalized; awo says so before spending a round. Almost always a superseded tip from an earlier approval of the same task. Find the holder with `jj log -r 'bookmarks(<name>)'`, resolve it per §3.3, then re-run.
+
+### A rework resume ends immediately at `REWORK_CAP_HIT`
+Not expected: `--max-rework-rounds` budgets this invocation's rounds and carried changes do not consume it. If you see it with zero rounds run, the wrapper is pinned to an awo build that predates that fix — pass a larger `--max-rework-rounds` after the wrapper's own flag (the last value wins) and record it in `work_log`.
+
 ### A task escalates again after a spec repair
 Stop. Either the repair was wrong or the defect is deeper than §E.2's boundary allows. Surface both escalations and your repair to the user.
 
@@ -304,14 +365,19 @@ Stop. Either the repair was wrong or the defect is deeper than §E.2's boundary 
 ```
 {work_log}                                              — durable orchestration record (you maintain this)
 .agents/runs/{timestamp}-task-{MM}-{slug}/              — per-task awo run directory (awo writes this)
+  task-state.json                                       — canonical record: base, produced changes, outcome
+  orchestrator.log                                      — JSONL progress
+  implementer/results/round-{N}.yaml                    — archived per-round result.yaml
+  reviewer/reviews/round-{N}.yaml                       — archived per-round review.yaml
 {scratchpad}/injected-review.yaml                       — seed review for a rework resume (you write this)
 ```
 
-Bookmarks created:
+Bookmarks:
 
 ```
-pr/awo-generate-task-{planning_slug}-step-{N}           — the step's task-generation change
-awo-loop-checkpoint-step{NN}-task{MM}-{slug}            — recovery checkpoint on an unbookmarked base
-pr/{planning_slug}/step{NN}/task-{MM}-{slug}.code-task  — the task's final tip (consumed by PR generation)
-pr/{planning_slug}-spec-fix-step{NN}-task{MM}           — an interposed spec repair commit
+pr/awo-generate-task-{planning_slug}-step-{N}           — the step's task-generation change (you create)
+awo-loop-checkpoint-step{NN}-task{MM}-{slug}            — recovery checkpoint on an unbookmarked base (you create)
+pr/{planning_slug}/step{NN}/task-{MM}-{slug}.code-task  — the task's final tip, consumed by PR generation
+                                                          (awo creates on approval; see §3.3)
+pr/{planning_slug}-spec-fix-step{NN}-task{MM}           — an interposed spec repair commit (you create)
 ```
