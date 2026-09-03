@@ -1062,3 +1062,13 @@ across a task's rework rounds, but no observed finding depended on having review
 earlier task, and the step-scoped session auto-compacted mid-turn. Hence the current
 shape — reviewer scoped to a task, cross-task coverage moved to an explicit per-step
 `implementation-review`.
+
+The full evidence is in [`eval/reports/`](eval/reports/README.md) — the orchestrator's
+own work log from that run, with each finding tagged and traceable to the rule it
+produced. Read it before relaxing any constraint in this skill that looks
+over-cautious: several of them (re-asserting the model every prompt, comparing change
+ids rather than commit ids, testing base *ancestry* rather than identity) exist because
+the obvious-looking version was tried and silently failed.
+
+**If you run this skill and hit something it does not cover, add a report.** A run that
+surfaces a defect and leaves no record is a run that will be repeated.
