@@ -13,6 +13,14 @@
 #
 # So the test is resolution, not length. --check resolves every id and prints
 # the full 32-character form, which is what belongs in task-record.json.
+#
+# --check also rejects a bare COMMIT id. `jj log -r` accepts one as a revset, so
+# an earlier version of this script resolved it and printed `ok` — positively
+# confirming the one id class the skill forbids. That matters because §4.6's
+# `jj describe` rewrites the commit id of every earlier change in the task: a
+# commit id resolves cleanly now and to nothing afterwards, leaving a task
+# record that is valid until finalisation and silently dangling after it. A
+# commit id is the dangerous malformation precisely because it does resolve.
 
 . "$(dirname "$0")/_common.sh"
 
@@ -31,16 +39,22 @@ REPO=$(cd "$REPO" && pwd) || die "repo not a directory: $REPO"
 if [ "$MODE" = check ]; then
   rc=0
   for id in "$@"; do
-    n=$(jj -R "$REPO" log --no-graph -r "$id" -T 'change_id ++ "\n"' 2>/dev/null | grep -c .)
-    full=$(jj -R "$REPO" log --no-graph -r "$id" -T 'change_id ++ "\n"' 2>/dev/null | head -1)
-    case "$n" in
-      1) if [ "$id" = "$full" ]; then
+    mapfile -t rows < <(jj -R "$REPO" log --no-graph -r "$id" \
+                          -T 'change_id ++ " " ++ commit_id ++ "\n"' 2>/dev/null | grep .)
+    case "${#rows[@]}" in
+      1) full=${rows[0]% *}; commit=${rows[0]#* }
+         # An id that prefixes the commit id but not the change id is a commit
+         # id. Loud, not `ok` — see the header.
+         if [ "${full#"$id"}" = "$full" ] && [ "${commit#"$id"}" != "$commit" ]; then
+           printf 'COMMIT-ID  %s is a COMMIT id of change %s — do not use it\n' "$id" "$full"
+           rc=1
+         elif [ "$id" = "$full" ]; then
            printf 'ok         %s\n' "$id"
          else
            printf 'ok         %s -> %s\n' "$id" "$full"
          fi;;
       0) printf 'UNRESOLVED %s\n' "$id"; rc=1;;
-      *) printf 'AMBIGUOUS  %s (%s matches)\n' "$id" "$n"; rc=1;;
+      *) printf 'AMBIGUOUS  %s (%s matches)\n' "$id" "${#rows[@]}"; rc=1;;
     esac
   done
   exit $rc

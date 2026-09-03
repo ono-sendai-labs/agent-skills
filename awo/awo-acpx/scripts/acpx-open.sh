@@ -65,7 +65,8 @@ if want_effort and want_effort != "null" and effort != want_effort:
     if levels:
         bad.append(f"  levels this model accepts: {', '.join(str(l) for l in levels)}")
 print(f"session record: {path}")
-print(f"model={model} reasoning_effort={effort}")
+print(f"model={model} reasoning_effort="
+      f"{effort if effort is not None else '(unset)'}")
 if bad:
     print("MISMATCH:", *bad, sep="\n  ", file=sys.stderr)
     raise SystemExit(1)

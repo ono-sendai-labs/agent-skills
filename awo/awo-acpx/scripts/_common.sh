@@ -36,3 +36,17 @@ mtime_age() { # path -> seconds since last modification, or -1
   [ -e "$1" ] || { echo -1; return; }
   echo $(( $(date +%s) - $(stat -c %Y "$1") ))
 }
+
+# Is a pid still alive? (kill -0 succeeds for a live process we may not own.)
+proc_alive() { [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null; }
+
+# The pid of a detached turn launched by acpx-prompt.sh, or empty.
+turn_pid_in() { # out-dir
+  [ -s "$1/turn.pid" ] || return 0
+  tr -dc '0-9' < "$1/turn.pid"
+}
+
+# Does this turn's stream already carry a terminal stopReason?
+turn_finished_in() { # out-dir
+  [ -e "$1/out.json" ] && grep -q '"stopReason"' "$1/out.json" 2>/dev/null
+}
