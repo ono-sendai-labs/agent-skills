@@ -24,3 +24,4 @@ Conventions:
 | Report | Skill revision tested | Outcome |
 |---|---|---|
 | [2026-09-02 · arcc step 01](2026-09-02-arcc-step01-compositional-component-analysis.md) | `a949b850` (initial prototype) | 23 findings → `cfbee2a4`: reviewer scope narrowed step→task, per-step `implementation-review` added, plan progress moved to the orchestrator, per-prompt model re-assertion, killed-turn recovery |
+| [2026-09-03 · arcc steps 02–03](2026-09-03-arcc-step02-03-compositional-component-analysis.md) | `cfbee2a4` (RUN 1's fixes) | 13 findings (F-24–F-36), 4 high/critical. §5.3 and §5.2 verified working; §Sessions' model of acpx found wrong on five counts (exit codes, kill signature, `status -s` model line, effort re-assertion, `cache_read` drops); §Recovering has no rule for uncommitted work |
