@@ -28,11 +28,20 @@ structured-spec-to-code       producer skills: task-to-code, code-task-review
 awo-acpx skill                outer loop AND inner loop, driven by the orchestrating agent
         │                     deterministic validation replaced by judgement
         ▼
-acpx sessions                 long-lived: implementer per task, reviewer per step
+awo-acpx/scripts/             the acpx surface: session open/prompt/progress/close,
+        │                     change-id resolution. Encodes what the raw CLI gets wrong.
+        ▼
+acpx sessions                 long-lived: implementer per task, reviewer per task
         │
         ▼
 structured-spec-to-code       the same producer skills
 ```
+
+The `scripts/` layer exists because two evaluation runs found acpx's exit codes and status
+output reporting the opposite of the truth — a `--timeout` that returns success while the
+turn keeps running, a `status` that says `running` for a dead turn. Those assertions belong
+somewhere executable and re-testable against a new acpx release, not in prose. See
+[`awo-acpx/scripts/README.md`](awo-acpx/scripts/README.md).
 
 The producer skills live in `../structured-spec-to-code/`. Their escalation contract — the
 `escalated` verdict/status and the shared reason taxonomy (`spec_defect`, `spec_ambiguity`,
