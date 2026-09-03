@@ -188,10 +188,27 @@ acpx --cwd "$REPO" {agent} status -s {session}                          # VERIFY
 **Constraints:**
 - You MUST re-assert model (and effort, when the role sets one) **before every prompt to
   every session**, not once per session.
-- You MUST verify with `status -s {session}` and read the `model:` line it reports. That
-  line is the *resolved* model as the adapter sees it. The `model set: {model}` echo from
-  the `set` command is **not** verification — it only reports the value acpx forwarded, so
-  a rejected or reverted setting looks identical to a successful one.
+- You MUST verify the **model** with `status -s {session}` and read the `model:` line it
+  reports. That line is the *resolved* model as the adapter sees it. The
+  `model set: {model}` echo from the `set` command is **not** verification — it only
+  reports the value acpx forwarded, so a rejected or reverted setting looks identical to
+  a successful one.
+- **Effort cannot be verified in-band.** `status -s` reports `model:` and `mode:` but not
+  reasoning effort, and the `set` echo is worthless for the same reason as above. This is
+  a real gap, and it is the parameter that was actually observed reverting. Two partial
+  mitigations, both required:
+  1. Re-assert effort before every prompt anyway — cheap, and it closes the window even
+     though you cannot confirm it took.
+  2. Confirm it out-of-band at least once per session, from the harness's own log. For
+     codex, the rollout at `~/.codex/sessions/{YYYY}/{MM}/{DD}/rollout-*.jsonl` (nested by
+     **local** date, named with the `acp_session_id` from the acpx record) carries a
+     `turn_context` object per turn with the `"effort"` actually used. Grep it and record
+     what you find in `work_log`. If it disagrees with what you set, that is a finding —
+     report it and say which turns ran at the wrong effort.
+- Before using a non-default effort, check it is supported for the model. For codex,
+  `~/.codex/models_cache.json` lists `supported_reasoning_levels` per model slug (these
+  differ between models — e.g. `ultra` exists for some and not others). An unsupported
+  value may be accepted by `set` and then silently ignored.
 - Note that `set reasoning_effort` succeeds with a differently-shaped message
   (`config set: reasoning_effort=medium (4 options)`), not `model set: …`. Do not
   pattern-match on the `model set:` shape for it.
