@@ -1442,3 +1442,40 @@ now is.
 (E.1–E.4) in full, and §Recovering's `jj abandon` predicate — the last of which has now
 failed to apply in all three real kills, because in every case the killed turn left nothing
 committed. That is worth noting: the predicate may be guarding a case that does not occur.
+
+---
+
+# Disposition — acted on in `ecb43935`
+
+Added after the run, by the skill maintainer, not by the orchestrator. Skill revision under
+test was `31c4b438`; the resulting revision is
+`ecb43935` *"fix(awo-acpx): make the exceptional paths executable — RUN 3 findings"*.
+
+| # | Disposition |
+|---|---|
+| F-37 | **Fixed.** §Prompting states the denominator is per-harness, names where the codex figure lives, and requires recording "no threshold was evaluable" where none exists rather than skipping silently. Resolve it per role at preflight. |
+| F-38 | **Fixed in the skill, not in the config file.** §Role Configuration: read `roles_config` for its values, never its instructions; the skill wins and you say so in `work_log`. The stale comment lives in the target repo and is the user's to remove. |
+| F-39 | **Fixed.** New §0 Resuming: the loop position is read off the bookmarks — the report's own table, adopted verbatim with a sixth row — to task granularity, cross-checked against the checklist and `work_log`, and §2 is skipped when the step's generation bookmark exists. Ending a run at a task boundary now requires a `RUN STOP` section, so the convention RUN 2 happened to follow is a contract. |
+| F-40 | **Fixed.** §4.7 permits running retroactively for a task completed under an earlier revision, provided nothing is synthesised. The deviation was right. |
+| F-41 | **Fixed, option (a).** §4.7 bookmarks `pr/awo-record-{slug}-step{NN}-task-{MM}`; §4.1's enumeration is rewritten to name it as the base of every task after the first, and to stop and investigate rather than invent a name. Restores §Recovering's abandon anchor and makes bookkeeping resumable in F-39's terms. |
+| F-42 | **Fixed.** `acpx-open.sh` prints `(unset)`. |
+| F-43 | **Fixed.** §4.2 derives `produced_changes` from `jj log -r '{base}::@- ~ {base}'` after the turn; "append as it is created" is gone, with the reason (it describes an access pattern §Supervising forbids). §4.4 repeats it at the point of use. The five-not-four incident is quoted in full — an unreliable count is worse than a biased one. |
+| F-44 | **Fixed, and strengthened past what the finding asked.** §4.6's licence now covers the title, and "MAY rewrite" is "MUST check, and rewrite when it is in the reviewer's voice" — 3/3 unusable is the default output, not a wart. Both observed failure shapes are named, including the invented project tag. |
+| F-45 | **Fixed in the script, which is where it belonged.** `acpx-progress.sh` gains verdict `4` (dead): the turn's own pid is gone and the stream carries no `stopReason`. §Recovering's "poll until 3" is replaced by "over means 3 or 4", with the unreachability explained so nobody reintroduces it. |
+| F-46 / F-49 | **Addressed structurally.** The kills cannot be prevented, so the turn no longer dies with the call: `acpx-prompt.sh` runs acpx detached under `setsid` and `acpx-await.sh` reattaches after a kill. A kill now costs one reattach. The wrapper also traps TERM/INT/HUP into `wrapper-signals.log` (signal, elapsed, turn survival, parent survival) and `acpx-evidence.sh` snapshots memory, swap and process counts, so the next kill produces the evidence this one could not. §Operating Constraints records the falsified periodic-reaper hypothesis and the front-loading, and states §4.3's incremental-commit paragraph as the rest of the defence rather than as an anecdote. |
+| F-47 | **Reframed, interval unchanged (user's call).** §Supervising says plainly that check-ins are an exception path for long turns and that the per-turn token/wall lines are the routine record; `turn_check_interval` stays 900 s. |
+| F-48 | **Both halves fixed.** (a) The loop guard is per role: an implementer loss can leave unvalidated work and is charged; a reviewer loss that provably changed nothing is not. Also: a diagnosis without a fix is explicitly *not* an override — which is the call the orchestrator was least confident about, and it was right to be. (b) §5.1's sweep is scoped to step boundaries and end of run; a mid-task stop adopts §E.2's rule — close what is dead, keep what holds context, name it in `work_log`. The partial sweep was correct. |
+| F-50 | **Fixed.** `jj-change-id.sh --check` resolves `change_id ++ commit_id` and reports `COMMIT-ID … do not use it`, rc 1, when the input prefixes the commit id and not the change id. Verified against a real jj repo on full and short commit ids. |
+| F-51 | **Fixed.** New `acpx-evidence.sh` splits the capture in two: an interpreted tier (`NOTES.md`, `sessions-show.txt`, `status.txt`, `wrapper-signals.log`, `resources.txt`, `jj` snapshots) and `raw/`. §4.7 copies the first and MUST NOT copy the second. |
+
+**Not addressed, deliberately.** §5.2's remediation branch, §Escalation Handling E.1–E.4,
+and §Recovering's `jj abandon` predicate remain unexercised after three runs. The predicate
+in particular has now failed to apply in all three real kills, because a front-loaded kill
+leaves nothing committed — worth watching, but it guards the expensive case and stays.
+
+**One environmental observation carried forward.** Roughly sixty `dbus-daemon` /
+`gnome-keyring-daemon` pairs were found accumulating in the sandbox, one pair per
+invocation, never reaped — an autospawn triggered by an unset `DBUS_SESSION_BUS_ADDRESS`.
+Not known to cause anything, but it is a monotonic leak that feeds the standing
+resource-pressure hypothesis for the front-loaded kills. `acpx-evidence.sh` now counts them
+at every kill, and §Troubleshooting records the identification and the suppression knob.
