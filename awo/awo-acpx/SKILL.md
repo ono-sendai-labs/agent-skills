@@ -1,6 +1,6 @@
 ---
 name: awo-acpx
-description: Drive an implementation plan to completion using long-lived acpx agent sessions instead of the awo binary. Loops over plan steps, generating code tasks per step and running an implementer/reviewer loop on each task, where the implementer session spans a whole task (reused across rework rounds) and the reviewer session spans a whole step. Bookmarks every produced change for PR generation, keeps a work log, and handles an escalated task by repairing the specification in a separate auditable commit interposed below the implementation, then reconciling in the same implementer session.
+description: Drive an implementation plan to completion using long-lived acpx agent sessions instead of the awo binary. Loops over plan steps, generating code tasks per step and running an implementer/reviewer loop on each task, where both the implementer and reviewer sessions span a whole task and are reused across its rework rounds. Catches cross-task drift with a step-scoped implementation-review in a fresh session, marks plan progress itself in a separate commit, bookmarks every produced change for PR generation, keeps a work log, and handles an escalated task by repairing the specification in a separate auditable commit interposed below the implementation, then reconciling in the same implementer session.
 ---
 
 # awo-acpx Orchestrator (prototype)
@@ -12,13 +12,18 @@ This is a **prototype variant of `awo-orchestrator`** that replaces the `awo` bi
 plan → steps → tasks, bookmarks, work log, escalation handling — but the inner
 implementer ⇄ reviewer loop is yours to run, over **long-lived agent sessions**.
 
-Two things change, and they are what the prototype exists to evaluate:
+Two things change:
 
 1. **The implementer session spans a whole task.** Rework rounds reuse it, so the implementer
    never re-reads the task, re-explores the codebase, or re-derives why it wrote what it wrote.
-2. **The reviewer session spans a whole step.** One reviewer sees every task and every round in
-   the step, which should catch cross-task drift a per-task reviewer cannot — at the cost of
-   a reviewer that is no longer context-independent per task.
+   This is well supported in practice: an implementer asked only to "address the findings"
+   reconstructed measurement tooling it had built and deleted two rounds earlier, without
+   being told it had existed, and rework rounds ran 3–5× faster than the initial round.
+2. **The reviewer session spans a whole task too**, reused across that task's rework rounds so
+   it can award partial credit against its own earlier findings. Cross-task drift is *not* its
+   job — that is covered explicitly by a step-scoped `implementation-review` in a fresh
+   session (§5.2). An earlier revision scoped the reviewer to a whole step; see
+   §Relationship to `awo-orchestrator` for why that was narrowed.
 
 Because the sessions are stateful, **you** are the loop: you route on verdicts, you check the
 repository shape, and you decide when the YAML is good enough. Validation that the `awo` binary
@@ -42,10 +47,12 @@ Repository interaction is **jj-only**. Never use Git commands.
 - **run_dir_root** (optional, default: `.agents/runs-acpx/`): Where you write per-task records.
 - **generate_tasks_cmd** (optional): Invoked as `{generate_tasks_cmd} {plan_file} {step_number}`.
   If unset, run task generation yourself per §2.
-- **implementer_agent** (optional, default: `opencode`) / **implementer_model** (optional,
-  default: `opencode-go/glm-5.3-flash`) / **implementer_effort** (optional, unset).
-- **reviewer_agent** (optional, default: `codex`) / **reviewer_model** (optional, default:
-  `gpt-5.6-sol`) / **reviewer_effort** (optional, default: `medium`).
+- **roles_config** (optional, default: `{repo}/.agents/awo/acpx-config.yaml`): Per-role
+  agent/model/effort selection. See §Role Configuration.
+- **step_review** (optional, default: `true`): Whether to run a step-scoped
+  `implementation-review` at the end of each step.
+- **max_step_remediation_rounds** (optional, default: `1`): How many times a step may be
+  remediated and re-reviewed before you stop and ask.
 - **check_cmd** (optional, unset): A CLI providing deterministic validation of report YAML and
   jj topology, e.g. `awo check`. When set, prefer it over your own inspection for the checks it
   covers, and record its verdicts in `work_log`. When unset — the prototype default — do those
@@ -61,7 +68,50 @@ Repository interaction is **jj-only**. Never use Git commands.
   before the first step. A missing agent is a stop-and-ask condition.
 - You MUST verify the producer skills are reachable by both harnesses before the first task —
   normally as symlinks in `{repo}/.agents/skills/` (`task-to-code`, `code-task-review`,
-  `plan-to-tasks`). See §Troubleshooting if an agent cannot find a skill.
+  `plan-to-tasks`, `implementation-review`). See §Troubleshooting if an agent cannot find a skill.
+
+## Role Configuration
+
+Four roles run in this workflow, and they want different capability/cost trade-offs.
+Read them from `roles_config` if it exists; otherwise use the defaults below.
+
+```yaml
+# .agents/awo/acpx-config.yaml
+roles:
+  task_generator:                       # §2 — decomposes a plan step into tasks
+    agent: codex
+    model: gpt-5.6-sol
+    effort: high
+  implementer:                          # §4.3/§4.5 — writes the code
+    agent: opencode
+    model: opencode-go/glm-5.3-flash
+    effort: null                        # null / omitted = leave adapter default
+  reviewer:                             # §4.4 — reviews ONE task and its rework rounds
+    agent: codex
+    model: gpt-5.6-terra
+    effort: high
+  step_reviewer:                        # §5.2 — implementation-review at step scope
+    agent: codex
+    model: gpt-5.6-sol
+    effort: high
+```
+
+**Rationale for the defaults.** The task reviewer is scoped to a single task (§4.4), so
+it no longer carries cross-task reasoning and does not need the most capable model —
+cross-task drift is the `step_reviewer`'s job. Spend capability on `task_generator`
+(a bad decomposition poisons every task under it) and on `step_reviewer` (wide-scope,
+judgement-heavy, runs once per step), not on every task-review round.
+
+**Constraints:**
+- Precedence is: explicit invocation parameter > `roles_config` > the defaults above.
+- You MUST record the resolved agent/model/effort for all four roles in `work_log`
+  before the first turn. A run whose model selection is not written down cannot be
+  compared against another run.
+- A role's `effort: null` (or omitted) means do not issue `set reasoning_effort` at all;
+  it does NOT mean "set it to the adapter default".
+- If `roles_config` exists but is unparseable, or names a role you do not recognise,
+  stop and ask. Do not silently fall back to defaults — a config that is being ignored
+  is worse than no config.
 
 ## Operating Constraints
 
@@ -71,8 +121,10 @@ Repository interaction is **jj-only**. Never use Git commands.
   the launcher returns while the real work continues detached.
 - **One turn at a time per session.** acpx queues concurrent prompts to the same session through
   its queue owner. Never issue a second prompt to a session with a turn in flight; wait.
-- **Never destroy completed work.** No `jj abandon`, no `jj undo`, no amending or squashing
-  changes produced by a task loop. Every recovery must be additive.
+- **Never destroy completed work.** No `jj undo`, and no amending or squashing changes
+  produced by a task loop, except the description-only `jj describe` that §4.6 requires.
+  Every recovery must be additive. `jj abandon` is permitted **only** under the narrow
+  predicate in §Recovering from a killed turn.
 - **jj only.** Inspect and mutate the repository with jj.
 - **Create bookmarks, never move them.** Always `jj bookmark create` — never `jj bookmark set`.
   `create` fails if the name exists, surfacing a collision or an unintended re-run. A `create`
@@ -89,28 +141,77 @@ Repository interaction is **jj-only**. Never use Git commands.
 
 | Role | Session name | Lifetime |
 |---|---|---|
-| Implementer | `awo-impl-{planning_slug}-step{NN}-task{MM}` | one task, all its rounds |
-| Reviewer | `awo-rev-{planning_slug}-step{NN}` | one step, all its tasks and rounds |
+| Task generator | `awo-gen-{planning_slug}-step{NN}` | one step's task generation |
+| Implementer | `awo-impl-{planning_slug}-step{NN}-task{MM}` | one task, all its rework rounds |
+| Reviewer | `awo-rev-{planning_slug}-step{NN}-task{MM}` | one task, all its rework rounds |
+| Step reviewer | `awo-steprev-{planning_slug}-step{NN}` | one step-scoped review pass |
 
 The names must be unique per scope; the slug guarantees that across concurrently-open plans.
+
+**Why the reviewer is task-scoped.** An earlier revision of this skill scoped the
+reviewer to a whole step. In practice the only continuity benefit that materialised was
+*intra*-task — the reviewer awarding partial credit against its own prior findings
+across rework rounds ("addressing the first half of the prior finding"). No finding was
+observed that depended on having reviewed an *earlier task*. Meanwhile the step-scoped
+session grew ~35k tokens per turn and **auto-compacted mid-turn** on a three-task step,
+silently discarding most of its history — invisibly to the orchestrator, since nothing
+in acpx's output reports compaction. Cross-task drift is now covered explicitly by the
+step-scoped `implementation-review` pass (§5.2), with clean context, which is a better
+tool for it than a session that happens to still remember.
+
+Keep the reviewer session across a task's **rework rounds** — that is where its value
+was demonstrated. Do not narrow it further to per-round.
 
 ### Opening a session
 
 ```sh
 acpx --cwd "$REPO" {agent} sessions new --name {session}
-acpx --cwd "$REPO" {agent} -s {session} set model {model}
-acpx --cwd "$REPO" {agent} -s {session} set reasoning_effort {effort}   # if effort is set
 ```
 
 **Constraints:**
 - Use `sessions new`, not `sessions ensure`. `new` soft-closes any existing session of that name
   and starts fresh, which is what you want at a task or step boundary. `ensure` would silently
   resume a stale conversation from an aborted earlier attempt.
-- You MUST set the model *before* the first prompt, and confirm the command printed
-  `model set: {model}`. A silently defaulted model invalidates the experiment.
-- `set reasoning_effort` is a `session/set_config_option` call and is adapter-defined. If the
-  adapter rejects it, record that in `work_log` and proceed on the adapter default — do not
-  substitute a different model.
+- Then apply the role's model and effort per §Asserting the model, below — **before** the
+  first prompt, and again before every subsequent prompt.
+
+### Asserting the model and effort — before EVERY prompt
+
+Do not set the model once and assume it holds. It does not.
+
+```sh
+acpx --cwd "$REPO" {agent} -s {session} set model {model}
+acpx --cwd "$REPO" {agent} -s {session} set reasoning_effort {effort}   # only if effort is non-null
+acpx --cwd "$REPO" {agent} status -s {session}                          # VERIFY
+```
+
+**Constraints:**
+- You MUST re-assert model (and effort, when the role sets one) **before every prompt to
+  every session**, not once per session.
+- You MUST verify with `status -s {session}` and read the `model:` line it reports. That
+  line is the *resolved* model as the adapter sees it. The `model set: {model}` echo from
+  the `set` command is **not** verification — it only reports the value acpx forwarded, so
+  a rejected or reverted setting looks identical to a successful one.
+- Note that `set reasoning_effort` succeeds with a differently-shaped message
+  (`config set: reasoning_effort=medium (4 options)`), not `model set: …`. Do not
+  pattern-match on the `model set:` shape for it.
+- If the reported model is not the one the role asked for, stop and ask. Do not run the
+  turn — a round on the wrong model is worse than a missing round, because it silently
+  corrupts both the cost model and any model comparison.
+
+**Why this is mandatory.** acpx reaps an adapter process after its idle TTL (default
+300s) and respawns it on the next prompt. The respawned process re-reads the harness's
+*global* config, discarding session-scoped settings. This was observed in practice: a
+reviewer session explicitly set to `reasoning_effort: medium` ran three turns at medium,
+idled ~34 minutes while the implementer worked, and then silently ran its remaining
+three turns at `high` — the value in `~/.codex/config.toml`. Nothing in acpx's stdout,
+stderr, or exit code reported the change.
+
+The exposure is not hypothetical for a task-scoped reviewer either: the gap between
+review turns is one implementer rework round, observed at 2m50s–4m07s against a 300s
+TTL. And under a mixed-model configuration (§Role Configuration), a revert silently
+promotes a cheap reviewer to whatever the global default is — inverting the economics
+the configuration exists to achieve.
 
 ### Prompting a session
 
@@ -126,11 +227,24 @@ acpx --approve-all --format quiet --timeout 3600 --cwd "$REPO" \
 **Constraints:**
 - `--approve-all` is REQUIRED. acpx's non-interactive permission default is deny, and a denied
   implementer produces nothing while still consuming a round.
-- `--format quiet` puts only the final assistant text on stdout; token/cost accounting and
-  diagnostics go to stderr. You MUST capture both.
-- You MUST record the stderr token line for every round in `work_log`. It is the primary
-  instrumentation for this prototype: it shows whether long sessions actually save context
-  reacquisition, and whether the step-scoped reviewer's context grows unsustainably.
+- `--format quiet` sends assistant text to stdout and token/cost accounting and diagnostics
+  to stderr. You MUST capture both. Note that "quiet" does **not** mean only the *final*
+  message: a turn's intermediate assistant messages arrive concatenated with no delimiter,
+  so there is no mechanical way to isolate the last one. If you need message boundaries —
+  e.g. to route on prose because an artifact is missing (§Validation Posture) — use
+  `--format json`, which is message-delimited.
+- You MUST record the stderr token line for every round in `work_log`. Read it correctly:
+  `input`/`output` are **per model call**, not per turn, so `total` is not a turn cost.
+  `cache_read` grows monotonically within a session and is the usable proxy for that
+  session's accumulated context. It is **not** comparable across agents (different
+  harness preambles), so never compare an opencode figure to a codex one.
+- The token line cannot see auto-compaction. If a session's `cache_read` *drops*, its
+  history was very likely compacted — treat that as a finding and record it, per
+  §Troubleshooting.
+- acpx writes a full JSON-RPC wire log per session to
+  `~/.acpx/sessions/{acp_session_id}.stream.ndjson`, always on, and a session record to
+  `~/.acpx/sessions/{acpx_record_id}.json`. That wire log is the black box: it survives a
+  killed client, which the captured stdout/stderr do not. Cite it when diagnosing.
 - Route on the exit code:
 
 | Exit | Meaning | Action |
@@ -141,6 +255,60 @@ acpx --approve-all --format quiet --timeout 3600 --cwd "$REPO" \
 | `4` | No session found | You did not open the session, or `--cwd` differs from the one you opened it with. Fix and retry |
 | `5` | Every permission request denied | You omitted `--approve-all`. Fix and retry |
 | `130` | Interrupted | Stop and ask |
+| *(none)* | The client was **killed** — no exit code at all, empty stdout and stderr | See §Recovering from a killed turn |
+
+**Detecting a killed turn.** `status -s` is not sufficient: after a kill it reports
+`idle`, identical to a healthy session that has never been prompted. Use
+`acpx --cwd "$REPO" {agent} sessions show {session}` and look for `closed: false`
+together with a **non-null `disconnectReason`** (e.g. `pipe_close`) and a `lastExitAt`.
+On a clean close those exit fields are null.
+
+Do **not** use an empty `agentSessionId` as a kill signal. Some adapters (opencode among
+them) never return an agent-side session id at all, so that field is empty on every
+session, successful or not; acpx resumes on its own `acp_session_id` regardless.
+
+### Recovering from a killed turn
+
+A turn can die without producing an exit code — a supervisor SIGTERM, an OOM kill, a
+lost terminal. The session record survives, partial work may be committed or sitting in
+`@`, and the conversation may or may not be resumable. You are expected to recover from
+this yourself rather than stopping, because every alternative route out is otherwise
+forbidden to you.
+
+**Constraints:**
+- You MUST first confirm the turn is actually dead, per §Detecting a killed turn. Never
+  act on a turn that is still running.
+- You MUST capture evidence before changing anything: copy the session's
+  `.stream.ndjson` tail and `sessions show` output into the run dir, and record
+  `jj diff -r <C>` for any change you are about to abandon. The audit trail must show
+  what was discarded, not merely that something was.
+- You MAY `jj abandon` a change only when **all** of these hold:
+  1. it is a strict descendant of the newest bookmark on the current stack;
+  2. it carries no bookmark itself; and
+  3. its change id does **not** appear in `produced_changes` of the active
+     `task-record.json`.
+
+  Evaluate descendants-first and re-check after each abandon. Anything above the newest
+  bookmark and absent from `produced_changes` is by construction the output of a turn
+  that never reported completion. Anything *in* `produced_changes` completed a round and
+  is off limits.
+- You MUST NOT rely on "everything above the newest bookmark" alone. Within a task the
+  produced series `I1…In` is unbookmarked until §4.6, so that test would license
+  discarding completed, reviewed rework rounds.
+- Then restart the round: open a **fresh** session (suffix the name, e.g. `…-task02b`),
+  re-assert model and effort, and re-issue the same prompt. Do not resume the killed
+  session — even when it is resumable, you cannot tell from the outside how much of the
+  turn it believes it completed, and the repository has since moved.
+- **Loop guard:** at most **one** automatic recovery per round. A second kill on the same
+  round is stop-and-ask.
+- A killed turn MUST NOT consume a `max_rework_rounds` slot. No review happened, so no
+  round elapsed; charging it would let flaky infrastructure fail a healthy task.
+- You MUST record the kill, the evidence, what you abandoned, and the restart in
+  `work_log`.
+
+Note that `jj abandon` is recoverable in jj — the operation log retains the change and
+`jj op restore` brings it back. That is why this narrow exception is safe; it is not a
+git-style destructive reset.
 
 ### Closing a session
 
@@ -162,11 +330,20 @@ with judgement rather than schema pedantry.
 **You MUST check, every round:**
 - After an implementer turn: `@` is empty and childless; `@-` is non-empty, described, and
   carries no bookmark; `@-`'s change ID matches the `result.change_id` the implementer reported.
+  "Matches" means **prefix containment**: `result.change_id` is the full 32-character change
+  id while `jj log` shows a 12-character prefix. Compare change ids, never commit ids —
+  §4.6's `jj describe` rewrites commit ids for every earlier task in the step.
 - After a reviewer turn: the repository is unchanged — same `@-` change ID, commit ID,
   description, and bookmarks as before the review. A reviewer that mutated the repository is a
-  stop-and-investigate condition, not something to accept.
-- The task's base identity is still what you recorded at §3.1. A base that moved under you means
-  something rewrote history; stop.
+  stop-and-investigate condition, not something to accept. To do this check properly you
+  MUST snapshot the topology *before* the review turn (e.g.
+  `jj log -r 'ancestors(@,N)' -T '…' > {run_dir}/round-{N}.pre-review.topology`) and diff
+  it afterwards. Keep both snapshots in the run dir.
+- The task's base recorded at §4.1 is still an **ancestor of `@`**, with an unchanged
+  change id. Test ancestry, not identity: a base that is no longer `@-` because someone
+  appended a commit below you is benign and normal in a shared repo, and stopping on it
+  halts a healthy run. A base that has *vanished* or whose change id no longer resolves
+  means history was rewritten — that is the stop condition.
 
 **You MAY be tolerant about:**
 - Missing or malformed `spec-workflow-meta` blocks. Locate the canonical artifact at its
@@ -174,8 +351,20 @@ with judgement rather than schema pedantry.
 - Schema imperfections in `result.yaml` / `review.yaml` — extra keys, missing optional fields,
   loose formatting. What you actually need from them is: the verdict/status, the change ID, the
   findings and their severities, the acceptance-criteria statuses, and any `escalation` block.
+- A **malformed but unambiguous** `result.change_id`. Producers have been observed emitting
+  a change-id prefix concatenated with a commit-id prefix (e.g. `sxqzlwnn65d9000d`), which
+  resolves to nothing. Accept it if — and only if — you can identify the intended change
+  with certainty from `jj log` and no other change shares either prefix; record that you
+  did. Do **not** copy the malformed string into `produced_changes`; write the real change
+  id, or you corrupt the series §E.3 depends on. Do not spend a rework round fixing a
+  string in a YAML file.
+- A `schema_version` in the artifact that disagrees with the one in the
+  ```spec-workflow-meta``` block. Prefer the artifact's.
 - A missing artifact entirely, when the final assistant text states the outcome unambiguously.
-  Record in `work_log` that you routed on prose rather than an artifact.
+  Record in `work_log` that you routed on prose rather than an artifact. Note that
+  `--format quiet` concatenates a turn's assistant messages without delimiters, so
+  "the final assistant text" is not mechanically identifiable — re-run with
+  `--format json` if the outcome is not plain from the concatenation.
 
 **You MUST NOT be tolerant about:** the verdict itself. If you cannot determine from either the
 artifact or the final text whether the reviewer approved, requested changes, or escalated, ask
@@ -203,10 +392,16 @@ checked off, or you hit a block you cannot clear.
 **Constraints:**
 - If `generate_tasks_cmd` is set, run `{generate_tasks_cmd} {plan_file} {step_number}` as a
   background task and wait for it. Otherwise run task generation yourself in a disposable acpx
-  session named `awo-gen-{planning_slug}-step{NN}`, using the reviewer agent and model (task
-  generation benefits from the more capable model), with a prompt of the form:
+  session named `awo-gen-{planning_slug}-step{NN}`, using the **`task_generator`** role
+  from §Role Configuration (a bad decomposition poisons every task beneath it, so this is
+  worth a capable model), with a prompt of the form:
 
   ```
+  This session runs in non-interactive mode as part of an automated orchestrator.
+  There is no human to answer questions. Do not ask for clarification and do not
+  emit progress narration. If genuinely blocked, say so explicitly rather than
+  asking.
+
   Skill: plan-to-tasks
   Parameters:
     agents_dir: .agents
@@ -226,13 +421,14 @@ checked off, or you hit a block you cannot clear.
   `.agents/tasks/{planning_slug}/step{NN}/` and are named `task-{MM}-{task_slug}.code-task.md`.
 - You MUST record the generated task files in `work_log` before implementing any of them.
 
-### 3. Open the Step's Reviewer Session
+### 3. Record the Step's Task Inventory
 
 **Constraints:**
-- You MUST open the reviewer session once per step, per §Sessions, before the first task.
-- Its first prompt is the first task's review kickoff (§3.4); there is no separate priming turn.
-- You MUST NOT reopen or recreate it between tasks in the step. Its continuity across tasks is
-  the property under test.
+- You MUST record in `work_log`, before the first task, the ordered list of task files for
+  this step and the resolved role configuration (§Role Configuration) you will run them
+  with.
+- There is no step-scoped reviewer session to open. Both the implementer and the reviewer
+  are opened per task, in §4.
 
 ### 4. Implement Each Task
 
@@ -259,7 +455,7 @@ Create `{run_dir_root}/{timestamp}-step{NN}-task-{MM}-{task_slug}/` and, inside 
   "step": {NN},
   "task": {MM},
   "implementer_session": "awo-impl-{slug}-step{NN}-task{MM}",
-  "reviewer_session": "awo-rev-{slug}-step{NN}",
+  "reviewer_session": "awo-rev-{slug}-step{NN}-task{MM}",
   "base": {"change_id": "...", "bookmark": "..."},
   "produced_changes": [],
   "rounds": [],
@@ -327,10 +523,16 @@ result.yaml and include the complete ```spec-workflow-meta block.
 
 #### 4.4 Review
 
-Prompt the step's reviewer session. On its **first** task in the step, prefix the non-interactive
-preamble from §4.3.
+Open **this task's** reviewer session per §Sessions (`awo-rev-{slug}-step{NN}-task{MM}`,
+using the `reviewer` role), then prompt it. Because the session is new for each task, its
+first prompt always carries the non-interactive preamble from §4.3.
 
 ```
+This session runs in non-interactive mode as part of an automated orchestrator.
+There is no human to answer questions. Do not ask for clarification and do not
+emit progress narration. If genuinely blocked, use the skill's escalation
+contract rather than asking.
+
 Skill: code-task-review  (.agents/skills/code-task-review/SKILL.md)
 Parameters:
   agents_dir: .agents
@@ -345,8 +547,15 @@ whole base-to-current range in implementation order. Do not modify the
 repository. Emit review.yaml plus the complete ```spec-workflow-meta block.
 ```
 
-For a re-review (round ≥ 1) in the same session, the reviewer already holds its prior review;
-say so rather than restating it:
+If the task's produced series contains a change that is not implementation — there
+should be none under the current contract, but verify rather than assume — say what it
+is and that it is in scope, rather than leaving the reviewer to infer why
+`current_change` is not what it expects.
+
+For a re-review (round ≥ 1) in the **same task's** session, the reviewer already holds its
+prior review; say so rather than restating it. This continuity across rework rounds is the
+reviewer session's whole purpose — awarding partial credit against its own earlier
+findings is something a per-round reviewer cannot do without being re-fed the old review:
 
 ```
 Re-review round {N} for {task_file}.
@@ -409,7 +618,13 @@ Unlike `awo run`, nothing finalizes the stack for you. You do it.
 - You MUST verify `@` is empty; commit stray files if present.
 - You MUST describe the **oldest** produced change of this task with the approved review's
   `merge_request.title` and `merge_request.body`, using `jj describe`. This is the merge-request
-  content the PR will carry.
+  content the PR will carry. This is the one sanctioned exception to §Operating Constraints'
+  no-amending rule: it is description-only, it preserves content and change ids, and jj will
+  report `Rebased N descendant commits` as it rewrites this task's later commit ids. That is
+  expected — and it is why every topology check in this skill compares **change** ids and
+  never commit ids.
+- When a task produced exactly one change, "oldest" and "newest" are the same change:
+  describe it and bookmark it.
 - You MUST create the task bookmark on the **newest** produced change, with `jj bookmark create`,
   named exactly:
 
@@ -422,7 +637,8 @@ Unlike `awo run`, nothing finalizes the stack for you. You do it.
 - If `create` fails because the name is taken, do not switch to `jj bookmark set`. Find the
   holder (`jj log -r 'bookmarks(<name>)'`) and stop and ask, unless it is a superseded tip of
   *this same task's* series — in which case say so explicitly in `work_log` before moving it.
-- You MUST close the implementer session (§Sessions) and write `outcome` into `task-record.json`.
+- You MUST close **both** the implementer and this task's reviewer session (§Sessions), and
+  write `outcome` into `task-record.json`.
 
 #### 4.7 Update the Work Log
 
@@ -436,13 +652,76 @@ Unlike `awo run`, nothing finalizes the stack for you. You do it.
 
 ### 5. Close Out the Step
 
+#### 5.1 Verify the step's tasks
+
 **Constraints:**
-- You MUST verify every task in the step is approved (or explicitly recorded as deferred) before
-  advancing.
-- You MUST close the step's reviewer session.
-- You MUST confirm the step's checklist item in `plan_file` is marked complete. `task-to-code`
-  normally does this after the step's last task; if it did not, mark it yourself and commit
-  that edit.
+- You MUST verify every task in the step is approved (or explicitly recorded as deferred)
+  before advancing.
+- You MUST verify every per-task implementer and reviewer session is closed.
+- You MUST verify `@` is empty and every task carries its `pr/…` bookmark.
+
+#### 5.2 Step-scoped implementation review
+
+Skip if `step_review` is false. Otherwise this is where cross-task drift is caught — the
+job the reviewer no longer does.
+
+**Constraints:**
+- You MUST run it in a **fresh** session `awo-steprev-{planning_slug}-step{NN}`, using the
+  `step_reviewer` role. Context independence is the point; do not reuse any session that
+  has seen this step's tasks.
+- Prompt:
+
+  ```
+  This session runs in non-interactive mode as part of an automated orchestrator.
+  There is no human to answer questions. Do not ask for clarification and do not
+  emit progress narration.
+
+  Skill: implementation-review  (.agents/skills/implementation-review/SKILL.md)
+  Parameters:
+    agents_dir: .agents
+    project_dir: {project_dir}
+    scope: step
+    step: {step_number}
+
+  Run the `implementation-review` skill at step scope. Do not modify the
+  repository beyond writing your report and any remediation task files.
+  ```
+
+- The step's checklist item is expected to be **unticked** at this point; that is normal
+  and the skill knows it. Do not tick it first to make the review "valid".
+- When it returns, read the report at
+  `{project_dir}/implementation/review-step{NN}.yaml` and route on `verdict`:
+
+  | `verdict` | Action |
+  |---|---|
+  | `clean` | Proceed to §5.3 |
+  | `remediation_recommended` | Judge: if the findings are genuinely deferrable, record them in `work_log` and proceed to §5.3; otherwise treat as `remediation_required` |
+  | `remediation_required` | Run the generated remediation tasks through §4 as additional tasks of this step, then re-run §5.2 once |
+
+- Remediation tasks land in **this step's** task directory and are implemented exactly like
+  any other task in §4 — own implementer session, own reviewer session, own bookmark.
+- You MUST commit the review report and any generated task files before implementing them,
+  with a conventional-commit message, and bookmark that change
+  `pr/awo-step-review-{planning_slug}-step-{step_number}`.
+- **Loop guard:** at most `max_step_remediation_rounds` (default 1) remediation rounds per
+  step. If a re-review still returns `remediation_required`, stop and ask — repeated
+  remediation on one step means the step was mis-planned, which is the user's call.
+
+#### 5.3 Mark the step complete
+
+The orchestrator owns plan progress; `task-to-code` does not touch it.
+
+**Constraints:**
+- You MUST mark the step's checklist item complete in `plan_file` (`- [ ]` → `- [x]`)
+  **yourself**, and commit that edit as its own change with a message like
+  `docs(plan): mark {planning_slug} step {N} complete`.
+- That commit MUST contain only the checklist edit. Keeping it separate is what makes
+  `@- == result.change_id` hold unconditionally for every task, and it is what will let
+  plan progress move to an external tracker later without touching any producer skill.
+- You MUST bookmark it `pr/awo-step-complete-{planning_slug}-step-{step_number}`.
+- If the item is already ticked, stop and investigate — under the current contract nothing
+  else should be ticking it, so something is out of date or another actor is writing to
+  the plan.
 - Then continue the loop at §1 with the next step number.
 
 ## Escalation Handling
@@ -554,7 +833,7 @@ re-emit result.yaml plus the complete ```spec-workflow-meta block.
   the session's context advantage.
 - You MUST give specific reconciliation steps, the way the injected review's `suggested_action`
   would have.
-- Then tell the step's **reviewer** — the same session, which has already seen the escalation:
+- Then tell this task's **reviewer** — the same session, which has already seen the escalation:
 
   ```
   The task you escalated has been repaired at the specification, not in the code.
@@ -583,20 +862,33 @@ re-emit result.yaml plus the complete ```spec-workflow-meta block.
 ### Example: normal step
 
 ```
-Step 03, 4 tasks generated → bookmark pr/awo-generate-task-{slug}-step-3
-  Reviewer session awo-rev-{slug}-step03 opened (codex, gpt-5.6-sol, medium)
+Roles resolved from .agents/awo/acpx-config.yaml and recorded in work_log:
+  task_generator codex/gpt-5.6-sol/high   implementer opencode/glm-5.3-flash/-
+  reviewer       codex/gpt-5.6-terra/high step_reviewer codex/gpt-5.6-sol/high
 
-  task-01: impl session opened (opencode, opencode-go/glm-5.3-flash)
+Step 03, 4 tasks generated → bookmark pr/awo-generate-task-{slug}-step-3
+
+  task-01: impl + rev sessions opened; model re-asserted and verified before each prompt
     round 0 → completed  (I1) → review → approved
     describe I1 with merge_request; bookmark pr/{slug}/step03/task-01-….code-task on I1
-    impl session closed
+    both sessions closed
   task-02:
     round 0 → completed  (I1) → review → changes_requested (2 important)
-    round 1 → completed  (I2) → re-review → approved
+    round 1 → completed  (I2) → re-review → approved   (same reviewer: "resolves the
+                                                        first half of my prior finding")
     describe I1 with merge_request; bookmark on I2
-    impl session closed
+    both sessions closed
   …
-  Reviewer session closed. Step 03 checklist item marked complete → continue at step 04.
+
+  §5.2 step review: awo-steprev-{slug}-step03 (fresh session, sol/high)
+    → verdict remediation_recommended, 1 important: validation duplicated across
+      task-02 and task-04. Not deferrable → 1 remediation task written into step03/
+      as task-05-….  Commit report+task, bookmark pr/awo-step-review-{slug}-step-3.
+    task-05 runs through §4 like any other task → approved.
+    Re-run §5.2 once → clean.
+
+  §5.3 tick Step 03 in plan.md, own commit,
+       bookmark pr/awo-step-complete-{slug}-step-3 → continue at step 04.
 ```
 
 ### Example: spec-defect escalation, repaired
@@ -658,9 +950,37 @@ to make. Re-open the session and set the model again; if it still fails, `acpx -
 {agent} sessions show {session}` and stop and ask.
 
 ### A turn appears to hang
-Check `acpx --cwd "$REPO" {agent} status` — `running` with a live pid means it is working. Do NOT
-cancel a working turn; agent turns on a large task legitimately take many minutes. If you must
-stop one, use `acpx --cwd "$REPO" {agent} cancel -s {session}`, which cancels cooperatively.
+Check `acpx --cwd "$REPO" {agent} status -s {session}` — `running` with a live pid means it is
+working. **The `-s` is required.** Without it, `status` reports on the cwd-default session, not
+your named one, and prints `status: no-session` even while your turn is running — which reads
+as "the turn is dead" and invites you to cancel live work.
+
+Do NOT cancel a working turn; agent turns on a large task legitimately take many minutes
+(15+ observed for a first implementation). If you must stop one, use
+`acpx --cwd "$REPO" {agent} cancel -s {session}`, which cancels cooperatively.
+
+### A session's `cache_read` dropped instead of growing
+Its history was almost certainly auto-compacted. Nothing in acpx's stdout, stderr token line,
+or exit code reports compaction — only the harness's own session log does (for codex,
+`~/.codex/sessions/{YYYY}/{MM}/{DD}/rollout-*.jsonl`, searchable for `"type":"compacted"` and
+`context_compacted`; note it nests by **local** date, and the id in the filename is the
+`acp_session_id` from the acpx record, not the acpx record id).
+
+Record it in `work_log` with the round it happened on. Compaction is not necessarily fatal —
+an observed instance preserved enough for the turn to complete correctly — but a session that
+compacted is no longer the session you think you are measuring, and any claim about its
+continuity after that point is unsupported.
+
+Mitigations: keep sessions task-scoped (already the default here), and raise the harness's
+context window if it is set below the model's real capability. For codex this is
+`model_context_window` / `model_auto_compact_token_limit` in `~/.codex/config.toml`; check the
+model's `max_context_window` in `~/.codex/models_cache.json` and stay inside it.
+
+### The model or effort changed without you setting it
+Expected, if you only set it once. See §Asserting the model and effort — re-assert and verify
+before **every** prompt. Do not fix this by editing the harness's global config to match what
+you wanted: that changes behaviour for interactive use of the same harness, and it only moves
+which silent default you are relying on.
 
 ### The implementer rewrote its earlier change instead of adding one
 Stop. The produced series is the audit trail and awo's whole topology contract depends on it.
@@ -671,12 +991,17 @@ attempt to reconstruct the series yourself.
 Stop and investigate. Record what changed. The review is not trustworthy, and neither is the
 change under review until you understand the mutation.
 
-### The reviewer's answers are degrading across the step
-This is the prototype's main risk, so record it carefully rather than working around it: which
-task, which round, what the reviewer missed or waved through, and the token line at that point.
-If it is bad enough to compromise the step, close the reviewer session and open a fresh one for
-the remaining tasks — and say so prominently in `work_log`, because it is the experiment's
-result.
+### The reviewer's answers are degrading within a task
+Record it: which task, which round, what the reviewer missed or waved through, its
+`cache_read` at that point, and whether a compaction event preceded it. Watch particularly for
+a zero-finding approval arriving right after a run of `changes_requested` verdicts — check
+whether the approval cites specific `file:line` evidence per acceptance criterion, or merely
+asserts that the criteria pass. The former is a real approval on a small task; the latter is
+degradation.
+
+If a task's reviewer is compromised, close it and open a fresh session for the remaining
+rounds of that task — and say so in `work_log`, noting that the fresh reviewer will not hold
+the prior rounds' findings, so you must pass the previous `review.yaml` path explicitly.
 
 ### Stray files in `@` at loop boundaries
 Commit them with a descriptive message if their origin is clear (usually an agent that finished
@@ -702,7 +1027,14 @@ pr/awo-generate-task-{planning_slug}-step-{N}           — the step's task-gene
 awo-loop-checkpoint-step{NN}-task{MM}-{slug}            — recovery checkpoint on an unbookmarked base
 pr/{planning_slug}/step{NN}/task-{MM}-{slug}.code-task  — the task's final tip, consumed by PR generation
 pr/{planning_slug}-spec-fix-step{NN}-task{MM}           — an interposed spec repair commit
+pr/awo-step-review-{planning_slug}-step-{N}             — the step review report + remediation tasks (§5.2)
+pr/awo-step-complete-{planning_slug}-step-{N}           — the checklist-only completion commit (§5.3)
 ```
+
+Note the step numbers are **not** consistently padded: session names and the task bookmark
+use `step{NN}` (`step01`), while the generation, step-review and step-complete bookmarks use
+`step-{N}` (`step-1`). Follow each name exactly as written — the task bookmark in particular
+is consumed by PR generation and must match to the character.
 
 ## Relationship to `awo-orchestrator`
 
@@ -713,8 +1045,20 @@ whether long-lived sessions are worth adopting. The differences to watch:
 |---|---|---|
 | Inner loop | `awo run` / `awo rework` | you, over acpx sessions |
 | Implementer context | fresh session per round | one session per task |
-| Reviewer context | fresh session per round | one session per step |
+| Reviewer context | fresh session per round | one session per task |
+| Cross-task drift | plan-scoped `implementation-review` at the end | step-scoped `implementation-review` per step (§5.2) |
+| Role selection | CLI flags per run | `.agents/awo/acpx-config.yaml` (§Role Configuration) |
+| Model/effort | set once by the binary | re-asserted and verified before every prompt |
+| Plan checklist | ticked by `task-to-code` | ticked by the orchestrator, own commit (§5.3) |
 | Topology validation | deterministic, in-binary | by inspection (or `check_cmd`) |
 | Artifact validation | schema-enforced, with repair prompts | tolerant; verdict must still be unambiguous |
 | Finalization | `awo run` describes and bookmarks | §4.6, by you |
 | Escalation resume | injected `review.yaml` + `awo rework --seed-review …` | one prompt to the live implementer session (§E.4) |
+
+**Findings that drove the current design.** The prototype's original hypotheses were a
+task-scoped implementer and a *step*-scoped reviewer. A run over a three-task step
+supported the first and only partly supported the second: reviewer continuity paid off
+across a task's rework rounds, but no observed finding depended on having reviewed an
+earlier task, and the step-scoped session auto-compacted mid-turn. Hence the current
+shape — reviewer scoped to a task, cross-task coverage moved to an explicit per-step
+`implementation-review`.

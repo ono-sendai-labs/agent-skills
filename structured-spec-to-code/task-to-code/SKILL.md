@@ -199,7 +199,7 @@ Create one fresh, unbookmarked jj change for the completed implementation.
 - You MUST NOT push to remote repositories
 - You MUST document the resulting `change_id` in progress.md.
 - You MUST verify all checklist items are marked complete before committing
-- After committing, if the task originates from a plan (i.e., it lives under a `step{NN}/` directory within `{agents_dir}/tasks/`), you MUST check whether all tasks in that step directory are now complete (all have a corresponding commit documented in their scratchpad's progress.md). If so, you MUST mark the corresponding checklist item in the implementation plan as complete (change `- [ ]` to `- [x]`)
+- You MUST NOT modify the implementation plan's progress checklist. Marking a step complete is the orchestrator's responsibility, in its own separate commit — a task change must contain only that task's work. This keeps `@-` identical to the `result.change_id` you report, and keeps plan progress owned by one actor (which also allows plan progress to move to an external tracker without touching this skill)
 
 ### 6. Emit Structured Result
 

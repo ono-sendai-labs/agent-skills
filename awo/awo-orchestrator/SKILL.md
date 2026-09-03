@@ -152,7 +152,8 @@ bookmark yourself after an `APPROVED` run collides with awo's.
 
 **Constraints:**
 - You MUST verify every task in the step is `APPROVED` (or explicitly recorded as deferred) before advancing.
-- You MUST confirm the step's checklist item in `plan_file` is marked complete. `task-to-code` normally does this after the step's last task; if it did not, mark it yourself and commit that edit.
+- You MUST mark the step's checklist item complete in `plan_file` (`- [ ]` → `- [x]`) yourself, and commit that edit as its own change containing only the checklist edit. `task-to-code` no longer does this: plan progress is owned by the orchestrator, so that a task change contains only that task's work (keeping `@-` identical to the `result.change_id` the producer reports), and so that plan progress can later move to an external tracker without changing any producer skill.
+- If the item is already ticked, stop and investigate — nothing else should be ticking it.
 - Then continue the loop at §1 with the next step number.
 
 ## Escalation Handling

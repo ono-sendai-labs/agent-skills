@@ -1,39 +1,60 @@
 ---
 name: implementation-review
-description: Review the full implementation of a plan once all its steps are complete. Looks across every commit, the current state of the codebase, the design, and the task-level review residue to surface architectural drift, duplication, undesirable dependencies, doc/code divergence, and cross-cutting issues that no single task review could catch. Produces a structured YAML report and a set of follow-on remediation `.code-task.md` files that re-enter the existing pipeline. Designed to run with clean context after the last task in the plan is committed.
+description: Review an implementation as a whole — either a single completed step or a finished plan. Looks across every commit in scope, the current state of the codebase, the design, and the task-level review residue to surface architectural drift, duplication, undesirable dependencies, doc/code divergence, and cross-cutting issues that no single task review could catch. Produces a structured YAML report and a set of follow-on remediation `.code-task.md` files that re-enter the existing pipeline. Designed to run with clean context after the last task in scope is committed.
 ---
 
 # Implementation Review
 
 ## Overview
 
-Review a finished implementation as a whole — not commit by commit. The reviewer reads the design, the plan, every task file, the scratchpad evidence (including any per-task `review.yaml` reports), and selectively reads the current state of the codebase. It produces:
+Review a completed implementation as a whole — not commit by commit. The reviewer reads the design, the plan, every task file in scope, the scratchpad evidence (including any per-task `review.yaml` reports), and selectively reads the current state of the codebase.
 
-1. A structured YAML report at `{project_dir}/implementation/review.yaml` (schema in `report-schema.md`).
-2. A set of follow-on remediation `.code-task.md` files in a new step folder, addressing findings that warrant code changes.
-3. An appended remediation step in the implementation plan, so the existing `task-to-code` flow can pick the new tasks up.
+The review runs at one of two **scopes**, selected by the `scope` parameter:
 
-The skill is single-pass: read inputs, analyse, emit artifacts, exit. It does not iterate, does not modify the existing code, and does not run task-to-code itself. It is intended to run with a highly capable model (Opus-class), since the analysis is wide-scope and judgement-heavy.
+| `scope` | Covers | Runs when | Purpose |
+|---|---|---|---|
+| `step` | One step's tasks and commits | After the last task of a step is approved, before advancing | Catch cross-task drift *within* a step while it is still cheap to fix |
+| `plan` (default) | Every step in the plan | After the last task of the last step | Catch drift that spans steps, and residue the per-step passes missed |
+
+The two are complementary, not alternatives. Running per-step reviews does not remove the value of a final plan-scoped pass, but it should make it quieter: a plan-scoped review MUST treat existing per-step reports as input (see step 5) rather than re-deriving findings already remediated.
+
+It produces:
+
+1. A structured YAML report (`{report_path}`; schema in `report-schema.md`).
+2. A set of follow-on remediation `.code-task.md` files addressing findings that warrant code changes — placed so the existing `task-to-code` flow picks them up (placement differs by scope; see step 8).
+3. At `plan` scope only, an appended remediation step in the implementation plan.
+
+The skill is single-pass: read inputs, analyse, emit artifacts, exit. It does not iterate, does not modify the existing code, and does not run task-to-code itself. It is intended to run with a highly capable model (Opus-class), since the analysis is wide-scope and judgement-heavy — and, when driven by an orchestrator, in a **fresh session**, since context independence is the whole point of a review that is meant to catch what the per-task reviewer could not.
 
 ## Parameters
 
 - **agents_dir** (optional, default: `.agents`): Base directory for structured-spec-to-code artifacts
 - **project_dir** (required): Project directory containing the design and plan (e.g., `{agents_dir}/planning/{project_name}`)
+- **scope** (optional, default: `plan`): `plan` to review every step, or `step` to review a single completed step
+- **step** (required iff `scope: step`): The step number to review, e.g. `1`. Zero-padded `step{NN}` directory naming is used on disk regardless of how it is passed
 - **plan_path** (optional, default: `{project_dir}/implementation/plan.md`): Path to the implementation plan
-- **report_path** (optional, default: `{project_dir}/implementation/review.yaml`): Where to write the YAML report
-- **remediation_step_dir** (optional): Where to put generated remediation tasks. Defaults to `{agents_dir}/tasks/{project_name}/step{NN}/`, where `NN` is the next available step number after the highest existing step folder
+- **report_path** (optional): Where to write the YAML report. Defaults to `{project_dir}/implementation/review.yaml` at `plan` scope, and `{project_dir}/implementation/review-step{NN}.yaml` at `step` scope — a step-scoped review MUST NOT overwrite the plan-scoped report or another step's
+- **remediation_step_dir** (optional): Where to put generated remediation tasks. Defaults differ by scope:
+  - `plan`: `{agents_dir}/tasks/{project_name}/step{NN}/`, where `NN` is the next available step number after the highest existing step folder
+  - `step`: the **reviewed step's own** directory, `{agents_dir}/tasks/{project_name}/step{NN}/` — remediation tasks are appended to that step as additional tasks, continuing its `task-{MM}-` numbering
+- **prior_step_reports** (optional, `plan` scope only): Paths to step-scoped reports already produced for this plan. Defaults to any `{project_dir}/implementation/review-step*.yaml` found
 
 **Constraints for parameter acquisition:**
 - You MUST ask for all parameters upfront in a single prompt
 - You MUST validate that the plan and design files exist
-- You MUST verify that all checklist items in the plan are marked complete; if not, you MUST escalate — running implementation review on a partial implementation is out of scope
+- You MUST resolve `scope` explicitly and state it in the report; never infer it from whether `step` happens to be set
+- Checklist validation depends on scope:
+  - At `plan` scope, you MUST verify that all checklist items in the plan are marked complete; if not, you MUST escalate — reviewing a partial implementation is out of scope
+  - At `step` scope, you MUST NOT require the step's checklist item to be ticked. Under the current contract the orchestrator ticks it *after* this review passes, so an unticked item is the expected state. You MUST instead verify that every task file in the step has a recorded commit (see step 1); a step with uncommitted tasks is out of scope and you MUST escalate
+- At `step` scope you MUST verify the step directory `{agents_dir}/tasks/{project_name}/step{NN}/` exists and contains at least one task file
 
 ## Escalation Policy
 
 This skill does not block on findings — findings go in the report. Escalate to the user ONLY when:
-- The plan still has unchecked items (review of a partial implementation is not supported)
+- At `plan` scope: the plan still has unchecked items (review of a partial implementation is not supported)
+- At `step` scope: one or more of the step's tasks has no recorded commit (the step is not finished)
 - The design document is missing or unparseable
-- No commits can be located for the implementation (no `progress.md` files, no commit log entries)
+- No commits can be located for the implementation in scope (no `progress.md` files, no commit log entries)
 
 Do NOT escalate because findings are severe — record them in the report and generate remediation tasks for the orchestrator to act on.
 
@@ -44,9 +65,13 @@ Do NOT escalate because findings are severe — record them in the report and ge
 Build a complete picture of the implementation before forming any judgement.
 
 **Constraints:**
-- You MUST read the plan in full and confirm all checklist items are complete
+- You MUST read the plan in full. At `plan` scope, confirm all checklist items are complete; at `step` scope, read the reviewed step's section in full and treat the surrounding steps as context for sequencing only
 - You MUST read the design document referenced by the plan (typically `{project_dir}/design/detailed-design.md`)
-- You MUST enumerate every task file under `{agents_dir}/tasks/{project_name}/step*/` and read each one
+- You MUST enumerate task files according to scope and read each one:
+  - `plan`: every task file under `{agents_dir}/tasks/{project_name}/step*/`
+  - `step`: only `{agents_dir}/tasks/{project_name}/step{NN}/`
+- At `step` scope you MUST NOT flag work belonging to later, not-yet-implemented steps as `missing` or as drift. The plan is the authority on what this step was responsible for; a design element the plan defers to a later step is out of scope, and saying otherwise produces findings the orchestrator cannot act on. You SHOULD, however, flag a design element this step *was* responsible for and did not deliver
+- At `plan` scope you MUST read any `prior_step_reports` before analysing, and treat their findings as already-known: a finding that a step-scoped report raised and whose remediation is present in the current code MUST NOT be re-reported. One that was raised and is still unaddressed MUST be re-reported, escalated one severity level, citing the earlier report
 - You MUST locate each task's scratchpad and read its `progress.md` (for the commit revision) and `review.yaml` if present
 - You MUST collect the list of commits from progress.md entries; if any task lacks a recorded commit you SHOULD note it and continue
 - You SHOULD consult `{agents_dir}/summary/` if available — both `codebase-summary.md` and `coding_style.md` — to understand pre-existing architecture and conventions
@@ -128,8 +153,10 @@ Decide which findings warrant a remediation task.
 Write the remediation tasks following the same code task format used by `plan-to-tasks`.
 
 **Constraints:**
-- You MUST determine the next available step number (`NN`) by inspecting `{agents_dir}/tasks/{project_name}/` and choosing the smallest integer not already used as `step{NN}`
-- You MUST create the directory `{remediation_step_dir}` (defaulting to `step{NN}/`)
+- Placement depends on scope:
+  - At `plan` scope, you MUST determine the next available step number (`NN`) by inspecting `{agents_dir}/tasks/{project_name}/` and choosing the smallest integer not already used as `step{NN}`, then create the directory `{remediation_step_dir}` (defaulting to `step{NN}/`)
+  - At `step` scope, you MUST write remediation tasks into the **reviewed step's own** directory, continuing its `task-{MM}-` numbering from the highest existing task number. You MUST NOT create a new step, and MUST NOT renumber or modify the step's existing task files. Name them so their origin is obvious, e.g. `task-04-remediate-duplicated-path-canonicalisation.code-task.md`
+- At `step` scope you MUST cap remediation at **3 tasks**. Cross-task issues found within a single step are by construction narrow; if more than 3 are warranted, the step's decomposition is likely wrong and that is itself the finding — generate the top 3, and record in the report's summary that the step needs re-planning rather than more remediation
 - You MUST follow the Code Task Format documented in `../plan-to-tasks/SKILL.md` (sections: Description, Background, Reference Documentation, Technical Requirements, Dependencies, Implementation Approach, Acceptance Criteria, Metadata)
 - Each remediation task MUST:
   - Reference the implementation review report in its Reference Documentation section: `Implementation Review: {report_path}`
@@ -141,12 +168,14 @@ Write the remediation tasks following the same code task format used by `plan-to
 
 ### 9. Update the Implementation Plan
 
-Append a new step to `plan.md` for the remediation work.
+**This step applies at `plan` scope only. At `step` scope you MUST NOT modify `plan.md` at all** — not the checklist, not the step body. The remediation tasks live inside the step that is already in progress, and the orchestrator ticks that step's checklist item once they are done. Skip to step 10.
+
+At `plan` scope, append a new step to `plan.md` for the remediation work.
 
 **Constraints:**
 - You MUST append a new numbered step to the plan's checklist, using a title like "Remediation from implementation review {date}"
 - You MUST add the corresponding step section in the body of the plan, following the same structure as existing steps (Objective, Implementation guidance, Test requirements, Demo criteria), summarised from the remediation tasks
-- You MUST leave the new step's checklist item *unchecked* — `task-to-code` will tick it once all remediation tasks are committed
+- You MUST leave the new step's checklist item *unchecked* — the orchestrator ticks it once all remediation tasks are committed
 - If no remediation tasks were generated (verdict: `clean`), you MUST NOT modify the plan
 
 ### 10. Emit the Report
@@ -155,6 +184,7 @@ Write the YAML report to `{report_path}`.
 
 **Constraints:**
 - You MUST follow the schema in `report-schema.md` exactly
+- You MUST record the `scope` you ran at, and at `step` scope the `step` number, in the report header. A consumer that cannot tell a step report from a plan report will mis-file its findings
 - You MUST set `verdict`:
   - `clean` if no `important` or `critical` findings, no `drifted`/`missing` architecture elements, and no `update_code` doc/code alignment items — and therefore no remediation tasks generated
   - `remediation_recommended` if `important` findings or notable doc/code drift exist, but no `critical` blockers
@@ -208,8 +238,15 @@ project_dir: ".agents/planning/template-feature"
 ## Troubleshooting
 
 ### Plan Has Unchecked Items
-If any plan checklist item is incomplete:
-- You MUST escalate. Implementation review assumes the plan is finished. A partial implementation has different remediation dynamics (in-progress work shouldn't be flagged as drift) and is out of scope
+At `plan` scope, if any plan checklist item is incomplete:
+- You MUST escalate. A plan-scoped review assumes the plan is finished. A partial implementation has different remediation dynamics (in-progress work shouldn't be flagged as drift) and is out of scope
+
+At `step` scope this is **not** an error condition: the reviewed step's item is expected to be unticked, because the orchestrator ticks it after this review passes. Escalate only if one of the step's own tasks has no recorded commit.
+
+### A Step-Scoped Review Keeps Finding Problems
+The orchestrator may re-run a step-scoped review after its remediation tasks are implemented. Guard against an unbounded loop:
+- A step SHOULD receive at most **two** step-scoped reviews: the initial one, and one confirmation pass after remediation
+- If the confirmation pass still yields `critical` findings, you MUST say so plainly in the summary and recommend the orchestrator stop and surface to the user rather than generating a third round. Repeated remediation on one step means the step was mis-planned, which is a planning decision, not a review one
 
 ### Design Document Missing or Unparseable
 If the design referenced by the plan cannot be read or has no architectural content:
@@ -229,15 +266,28 @@ If the review surfaces enough issues that more than 5–6 remediation tasks woul
 
 ## Artifacts
 
+At `plan` scope:
+
 ```
 {project_dir}/implementation/
 ├── plan.md          — Updated with appended remediation step (if any)
 └── review.yaml      — Implementation review report (schema in report-schema.md)
 
-{agents_dir}/tasks/{project_name}/step{NN}/
+{agents_dir}/tasks/{project_name}/step{NN}/     — NEW step folder
 ├── task-01-*.code-task.md
-├── task-02-*.code-task.md
 └── ...              — Generated remediation tasks (if any)
 ```
 
-The skill writes the report unconditionally, the plan and remediation tasks only when the verdict is not `clean`. It does not modify any other artifact.
+At `step` scope:
+
+```
+{project_dir}/implementation/
+└── review-step{NN}.yaml   — Step review report; plan.md is NOT modified
+
+{agents_dir}/tasks/{project_name}/step{NN}/     — the EXISTING step folder
+├── task-01-*.code-task.md                      — untouched
+├── task-02-*.code-task.md                      — untouched
+└── task-03-remediate-*.code-task.md            — appended remediation tasks (if any)
+```
+
+The skill writes the report unconditionally, and remediation tasks only when the verdict is not `clean`. It modifies `plan.md` only at `plan` scope. It does not modify any other artifact.
