@@ -40,12 +40,25 @@ TURN_PID=$(turn_pid_in "$OUTDIR")
 : "${START:=$(date +%s)}"
 
 on_signal() {
+  # Same correction as acpx-prompt.sh: the harness kills descendants by pid, crossing the
+  # setsid boundary, so a kill on this waiter may well have taken the turn with it. Report
+  # the observed state instead of asserting survival.
+  # NOTE: this read can still race the kill. The whole burst lands in ~200us, so the turn's
+  # own SIGTERM may not have been delivered yet and we will report 'alive' for a turn that
+  # is about to die. acpx-progress.sh is the authoritative check; this line is a hint.
+  local turn_state
+  turn_state=$(proc_alive "$TURN_PID" && echo alive || echo gone)
   {
     printf '%s waiter SIG%s; turn pid %s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" \
-      "$TURN_PID" "$(proc_alive "$TURN_PID" && echo alive || echo gone)"
+      "$TURN_PID" "$turn_state"
   } >> "$OUTDIR/wrapper-signals.log"
-  echo "WAITER KILLED by SIG$1 — the turn is detached and unaffected." >&2
-  echo "Reattach with: $HERE/acpx-await.sh --out-dir $OUTDIR" >&2
+  if [ "$turn_state" = alive ]; then
+    echo "WAITER KILLED by SIG$1 — turn pid $TURN_PID is still alive." >&2
+    echo "Reattach with: $HERE/acpx-await.sh --out-dir $OUTDIR" >&2
+  else
+    echo "WAITER KILLED by SIG$1 — turn pid $TURN_PID is ALSO GONE; the turn was lost." >&2
+    echo "Do NOT reattach; see the skill's \"Recovering from a lost turn\"." >&2
+  fi
   exit 11
 }
 trap 'on_signal TERM' TERM

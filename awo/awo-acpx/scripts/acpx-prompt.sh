@@ -13,14 +13,21 @@
 #       acpx-await.sh --out-dir DIR
 #   2   usage error
 #
-# THE TURN IS DETACHED, DELIBERATELY. The orchestrating harness has been
-# observed killing backgrounded calls ~17-141s after launch, taking unrelated
-# background tasks (a bare `sleep`) with them in the same instant, and every
-# such kill destroyed an agent turn that had done nothing wrong. So acpx runs
-# under `setsid`, in its own process session: a kill aimed at this wrapper's
-# process group cannot reach it. The wrapper is only a waiter. If the waiter
-# dies the turn keeps writing out.json and can be picked back up by
-# acpx-await.sh — turn loss becomes supervision loss, which is recoverable.
+# THE TURN IS DETACHED, DELIBERATELY -- BUT THAT IS NOT A GUARANTEE. The
+# orchestrating harness kills backgrounded calls in the first ~60s after launch.
+# A host-side syscall trace shows `claude` issuing one killpg on this wrapper's
+# process group followed by kill(pid, SIGTERM) on every descendant it can
+# enumerate. `setsid` defeats the killpg -- confirmed, the turn holds its own
+# SID and PGID -- but NOT the per-pid tree walk, which has been observed taking
+# the wrapper, the turn, the whole adapter chain and this script's own poll
+# `sleep` in a single 210us burst.
+#
+# So the turn survives the wrapper only sometimes, and exit 11 means "the
+# wrapper died", not "the turn lived". The caller MUST check acpx-progress.sh
+# before reattaching. What does hold unconditionally is that out.json is
+# streamed, so a killed turn still leaves its partial transcript on disk.
+# Reparenting to pid 1 (a double fork) is the only mechanism observed to
+# survive the tree walk; it is deliberately not done here.
 #
 # This is NOT the "double-backgrounding" the skill forbids. The wrapper blocks
 # until the turn is over, so the harness's completion notification still means
@@ -101,15 +108,31 @@ echo "turn detached: pid $TURN_PID (session $SESSION)"
 # name it. SIGKILL cannot be trapped — an absent log with a dead wrapper is
 # itself the finding.
 on_signal() {
+  # Report what is true, not what we hope. The harness kills by walking the process tree and
+  # signalling each descendant by pid, so it crosses the setsid boundary: the turn is killed
+  # with the wrapper as often as not. Saying "unaffected" unconditionally -- in the same
+  # invocation whose own log line records the turn already dead -- misled the orchestrator.
+  # NOTE: this read can still race the kill. The whole burst lands in ~200us, so the turn's
+  # own SIGTERM may not have been delivered yet and we will report 'alive' for a turn that
+  # is about to die. acpx-progress.sh is the authoritative check; this line is a hint.
+  local turn_state
+  turn_state=$(proc_alive "$TURN_PID" && echo alive || echo gone)
   {
     printf '%s SIG%s after %ss; turn pid %s %s; parent %s %s\n' \
       "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$(( $(date +%s) - START ))" \
-      "$TURN_PID" "$(proc_alive "$TURN_PID" && echo alive || echo gone)" \
+      "$TURN_PID" "$turn_state" \
       "$PPID" "$(proc_alive "$PPID" && echo alive || echo gone)"
     ps -o pid=,ppid=,etimes=,rss=,comm= -p "$TURN_PID" 2>/dev/null
   } >> "$SIGLOG"
-  echo "WRAPPER KILLED by SIG$1 — the turn is detached and unaffected." >&2
-  echo "Reattach with: $HERE/acpx-await.sh --out-dir $OUTDIR" >&2
+  if [ "$turn_state" = alive ]; then
+    echo "WRAPPER KILLED by SIG$1 — turn pid $TURN_PID is still alive." >&2
+    echo "Reattach with: $HERE/acpx-await.sh --out-dir $OUTDIR" >&2
+  else
+    echo "WRAPPER KILLED by SIG$1 — turn pid $TURN_PID is ALSO GONE; the turn was lost." >&2
+    echo "Do NOT reattach. Confirm with:" >&2
+    echo "  $HERE/acpx-progress.sh --repo $REPO --agent $AGENT --session $SESSION --out-dir $OUTDIR" >&2
+    echo "Partial transcript (streamed, survives the kill): $OUT" >&2
+  fi
   exit 11
 }
 trap 'on_signal TERM' TERM

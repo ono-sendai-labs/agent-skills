@@ -181,24 +181,41 @@ incidentally, mid-run, where it would confound rather than measure.
   call) — the harness would report completion as soon as the launcher returns while the
   real work continues detached. `acpx-prompt.sh` detaching the *turn* is not that: the
   wrapper still blocks until the turn is over, so its completion still means completion.
-- **The orchestrating harness is a kill vector, it is unexplained, and it is survivable.**
-  Backgrounded calls have been killed at 17 s, 19 s, 66 s and 141 s across two runs. In
-  one instance an unrelated `sleep 900` died in the same second, which rules out acpx, the
-  adapter, the wrapper and the turn's own behaviour; the harness reported both with the
-  wording it uses for an explicit stop, not for a failure. A periodic-reaper hypothesis
-  that fit five of five data points was **falsified by experiment** — a 20-minute
-  heartbeat ran straight through two predicted reap times. What survives is that the risk
-  is **front-loaded**: across eleven observed turns every kill landed under 150 seconds and
-  every survival ran past 360, with no overlap. That window is when acpx spawns the
-  adapter.
+- **The orchestrating harness is a kill vector. The sender is identified; the trigger is
+  gated on launch.** A host-side `bpftrace` trace caught it in the act: `claude` itself
+  issues the signals — one `killpg` on the wrapper's process group, then `kill(pid, SIGTERM)`
+  on **every descendant it can enumerate**, in a burst of a few hundred microseconds. It
+  walks the process tree by parentage.
 
-  Three consequences, and you MUST hold all three:
-  1. **You cannot prevent it.** Do not try to hold a turn open by raising a harness
-     timeout, and do not read a kill as something the turn did wrong.
-  2. **`acpx-prompt.sh` already survives it.** The turn runs detached under `setsid`; a
-     kill takes the wrapper, not the turn. Reattach with `acpx-await.sh --out-dir` rather
-     than treating the round as lost (§Recovering from a lost turn).
-  3. **§4.3's incremental-commit paragraph is the rest of the defence.** It is not
+  The exposure is **entirely at launch**. Across nineteen observed background tasks in one
+  session, every kill landed between **3.9 s and 66.7 s** after launch and every survivor
+  ran **136 s or longer**, with no overlap. Nothing has ever been killed after its first
+  minute, and nothing has ever survived a minute and then died. The harness evaluates its
+  condition when a background task is registered and does not re-evaluate: during a
+  fifteen-minute stretch in which host free memory fell 1.5 GB *below* the level at which a
+  launch was killed, the long turn running through it was untouched.
+
+  Four consequences, and you MUST hold all four:
+  1. **You cannot prevent it, and turn *length* is not the risk.** Do not try to hold a
+     turn open by raising a harness timeout, and do not read a kill as something the turn
+     did wrong. Risk is proportional to how many turns you launch, not how long they run.
+  2. **`setsid` does NOT protect the turn — this was believed and it is false.** An earlier
+     revision of this skill told you the turn survives because it holds its own process
+     session. It does hold its own session, and the `killpg` genuinely misses it — but the
+     harness then kills it by explicit pid anyway. A trace of one kill shows nine signals
+     taking the wrapper, the turn, the whole adapter chain (`bun` queue owner, `node`
+     `codex-acp`, the agent's `app-server`) and the wrapper's own poll `sleep`. Treat exit
+     `11` as *possibly* recoverable, never as certainly recoverable: reattach with
+     `acpx-await.sh --out-dir`, and if it reports the turn already dead, go to §Recovering.
+     The one thing observed to survive is an adapter already reparented to pid 1 by a
+     *previous* turn — i.e. a warm session's queue owner, which is luck, not design.
+  3. **Reclaim host memory immediately before a launch, not during a turn.** Two of six kill
+     events named a reason and both said the system was low on memory. The measured margin
+     between a killed launch and a surviving one is only ~320 MB of `MemAvailable`, and the
+     condition is read *at launch*. So anything you can free belongs at a task boundary
+     right before the next launch; nothing done mid-turn matters. The other four events
+     gave no reason at all, so do not assume memory explains every kill.
+  4. **§4.3's incremental-commit paragraph is the rest of the defence.** It is not
      decorative and it is not one anecdote's worth of caution: turn loss can be bounded,
      not prevented, and that paragraph is what bounds it. Because kills are front-loaded
      they usually cost seconds of agent work — the one turn that batched its work to a
@@ -310,10 +327,12 @@ and `{round_dir}/assistant.txt` (the assistant text, concatenated), and prints t
 `stopReason` and token usage.
 
 The turn itself runs **detached**, under `setsid`, with its pid in `{round_dir}/turn.pid`;
-the wrapper is only a waiter. That is deliberate — the orchestrating harness kills
-backgrounded calls unpredictably (§Operating Constraints) and a kill aimed at the wrapper's
-process group cannot reach a detached turn. If the wrapper is killed, the turn keeps
-running and keeps writing `out.json`.
+the wrapper is only a waiter. That buys less than an earlier revision claimed. A kill aimed
+at the wrapper's *process group* cannot reach the turn — verified — but the harness does not
+stop there: it enumerates the wrapper's descendants and kills each by pid, crossing the
+`setsid` boundary (§Operating Constraints). The turn therefore **sometimes** outlives the
+wrapper and sometimes does not. `out.json` is streamed rather than buffered precisely so that
+either way the partial transcript is on disk; that is the guarantee `setsid` failed to give.
 
 **Constraints:**
 - You MUST run this as a background task and wait for the completion notification. You
@@ -375,7 +394,7 @@ Route on the script's exit status, which describes the **turn**, not the acpx cl
 |---|---|---|
 | `0` | The turn completed — a terminal `result` carrying a `stopReason` arrived | Read `assistant.txt` and the artifact; route on the verdict |
 | `10` | The turn ended without a terminal `stopReason` | It really was lost. Do not prompt the session, do not touch the working copy. Go to §Recovering from a lost turn |
-| `11` | **The wrapper was killed; the turn was not** | The turn is detached and still running. Reattach: run `scripts/acpx-await.sh --out-dir {round_dir}` as a background task, exactly as you launched the prompt, and wait for it. Nothing is lost and no round is charged |
+| `11` | **The wrapper was killed** | The turn *may* have survived — `setsid` does not reliably protect it (§Operating Constraints). Run `scripts/acpx-progress.sh` first: on `0`/`1` the turn is alive, so reattach with `scripts/acpx-await.sh --out-dir {round_dir}` as a background task, exactly as you launched the prompt. On `4` (dead) the turn went with the wrapper — go to §Recovering from a lost turn. Charge nothing until you know which |
 | `2` | Usage error in the wrapper | Fix the invocation |
 
 A harness kill may also leave **no exit status at all** — the wrapper is SIGKILLed, or the
@@ -417,6 +436,19 @@ minutes) and for a turn you have reason to doubt. Run one when the wait exceeds
 whenever you are about to conclude a turn is dead. Do not manufacture them, and do not
 claim you performed one you did not.
 
+**A mid-turn check-in needs a companion job — the harness gives you no other way to wake
+up.** You are re-invoked on background-task *completion*, never at an arbitrary elapsed
+time, and a foreground `sleep` is blocked. So "run one when the wait exceeds
+`turn_check_interval`" is unsatisfiable as written: while you are blocked on the turn's own
+background task you cannot act at all. To make it reachable, launch a **second** background
+task alongside the turn that sleeps `turn_check_interval` and then runs `acpx-progress.sh`
+for the same `--out-dir`; its completion is the wake-up. This is not double-backgrounding —
+it is a separate task with its own completion, and it blocks until its own work is done.
+Note the cost: it is an extra background-task launch, and launch is the harness's kill
+window (§Operating Constraints), so do not schedule these speculatively on turns you have
+no reason to doubt. §Supervising's older note that "the check has never fired on a healthy
+turn" is evidence that it was **unreachable**, not that it is unnecessary.
+
 **Constraints:**
 - The check is:
 
@@ -450,13 +482,17 @@ claim you performed one you did not.
 
 ### Recovering from a lost turn
 
-**First: is it actually lost?** Since the turn runs detached, the usual answer is no.
+**First: is it actually lost?** Not necessarily — but do not assume it survived, either.
+The turn runs detached under `setsid`, and that defeats the harness's `killpg` but not its
+per-pid tree walk (§Operating Constraints). Establish which happened before you act.
 
 - `acpx-prompt.sh` exited **`11`**, or the harness killed the call and reported no status:
-  the *wrapper* died and the turn did not. Reattach with
+  the *wrapper* died. **Run `scripts/acpx-progress.sh` to find out whether the turn died
+  with it.** On `0` (working) or `1` (stalled) the turn is alive: reattach with
   `scripts/acpx-await.sh --out-dir {round_dir}`, backgrounded exactly as you launched the
-  prompt, and wait for it. Nothing is lost, nothing is charged, and the rest of this
-  section does not apply. Record the interruption and the reattach in `work_log`.
+  prompt, and wait for it — nothing is lost, nothing is charged, and the rest of this
+  section does not apply. On `4` (dead) the turn was killed too: continue here. Record the
+  interruption, the `acpx-progress.sh` verdict, and what you did in `work_log`.
 - `acpx-prompt.sh` exited **`10`**, or `acpx-progress.sh` reports **`4` (dead)**: the turn
   is genuinely over without a `stopReason`. Continue here.
 
@@ -781,15 +817,26 @@ For each task file in order:
   prefix padded out with invented characters, which resolves to nothing. A reviewer handed
   an unresolvable `base_change` does not error; it quietly reviews the wrong range. So
   never retype or complete an id by hand; take it from the script.
-- The base already carries a bookmark in every case this loop produces: for the step's
+- The base normally carries a bookmark, **unless an unbookmarked change has been interposed
+  at the task boundary**: for the step's
   first task it is §2's task-generation change; for every later task it is the previous
   task's §4.7 bookkeeping commit, which §4.7 bookmarks
   `pr/awo-record-{planning_slug}-step{NN}-task-{MM}`. (§4.6 bookmarks the previous task's
-  implementation tip, which sits one change below that.) If the base somehow carries no
-  bookmark, find out **why** before creating one: under the current contract that means a
-  section was skipped, and inventing a name in the `pr/…` namespace that PR generation
-  consumes is worse than a missing bookmark. Record what you found; create a bookmark only
-  if it is one of the two names above and its absence is explained.
+  implementation tip, which sits one change below that.) If the base carries no bookmark,
+  find out **why** before creating one, and expect one of two answers. The **benign** one:
+  a commit this skill itself sanctions was interposed at the boundary — a `chore(awo):`
+  side-edit of the kind §Operating Constraints permits with `@` empty — and it is now the
+  base. That is self-explaining, harms nothing, and is **not** evidence a section was
+  skipped. The other answer is that a section *was* skipped. Either way, inventing a name
+  in the `pr/…` namespace that PR generation consumes is worse than a missing bookmark, so
+  record what you found and create a bookmark only if it is one of the two names above and
+  its absence is explained.
+- **An interposed commit also moves §Recovering's `jj abandon` anchor.** That anchor is the
+  newest bookmark on the current stack; with the base and the previous task's §4.7 record
+  both unbookmarked it can sit two or more changes lower than intended, and the predicate's
+  other clauses do not exclude the difference. If you find the base unbookmarked, you MUST
+  NOT apply that predicate mechanically for the rest of this task: restrict abandonment to
+  changes you saw this task's own turns create.
 
 #### 4.2 Create the Run Record
 
@@ -1006,8 +1053,11 @@ Unlike `awo run`, nothing finalizes the stack for you. You do it.
 
 **Constraints:**
 - You MUST verify `@` is empty; commit stray files if present.
-- You MUST describe the **oldest** produced change of this task with the approved review's
-  `merge_request.title` and `merge_request.body`, using `jj describe`.
+- You MUST describe the **oldest** produced change of this task with the **final** review's
+  `merge_request.title` and `merge_request.body`, using `jj describe`. On the normal path the
+  final review is the approved one. On §4.4's deferral branch — findings judged genuinely
+  deferrable — the final verdict is `changes_requested` and **there is no approved review**;
+  use that review's `merge_request` all the same.
 - **You MUST check the merge request before using it, and rewrite title or body when they
   are written in the reviewer's voice rather than the change's.** This is not an occasional
   wart: on three of three tasks in one run the `merge_request` was unusable as written, so
@@ -1025,20 +1075,33 @@ Unlike `awo run`, nothing finalizes the stack for you. You do it.
     convention — the sibling commits below you are the reference — and correct it.
 
   Rewrite in the change's own voice, preserving **every** substantive claim the reviewer
-  made, including any finding left open as a suggestion. Record in `work_log` that you did
-  and what you changed. Do not use this licence to soften or drop anything the reviewer
+  made, including every finding left open **at any severity** — not only those phrased as
+  suggestions. Record in `work_log` that you did and what you changed. Do not use this licence to soften or drop anything the reviewer
   said; it exists for voice and readability, not for content. This is the merge-request
   content the PR will carry. This is the one sanctioned exception to §Operating Constraints'
   no-amending rule: it is description-only, it preserves content and change ids, and jj will
   report `Rebased N descendant commits` as it rewrites this task's later commit ids. That is
   expected — and it is why every topology check in this skill compares **change** ids and
   never commit ids.
+- **On the deferral path you MUST add a `DEFERRED` section to the `merge_request.body`.** A
+  deferred task's permanent commit description is the only tracked record that it shipped
+  with known defects — `run_dir_root` is gitignored, so the review artifacts under it are
+  not. That section MUST state: that the task was deferred and who authorized it; every
+  finding left open, at any severity, with its `file:line` and the inputs that reproduce it;
+  and any contradiction between findings that the next reader would otherwise have to
+  rediscover. A reviewer's `merge_request` has been observed omitting its own open
+  `important` findings entirely, so you cannot rely on inheriting them — take them from the
+  review body.
 - When a task produced exactly one change, "oldest" and "newest" are the same change:
   describe it and bookmark it.
 - **If the oldest produced change is a `wip(...)` recovery commit** written under
   §Recovering from a lost turn, its description is the only record of the recovery that
   lives in tracked history — `run_dir_root` is gitignored by default, so the evidence
-  under it is not. In that case you MUST append the original `wip` description to the
+  under it is not. The `wip` description's citation into `run_dir_root` is therefore
+  deliberately a **run-local pointer**, not a tracked path; say so where you write it, so a
+  later reader does not report the dangling reference as a defect. (A run that stops
+  mid-task never reaches this section at all, so at such a stop the citation is the only
+  record there is — leave the run directory in place.) In that case you MUST append the original `wip` description to the
   `merge_request.body` you write, under a `Recovery note:` heading, rather than replacing
   it. Losing the description would leave no tracked trace that a turn was interrupted and
   its partial work carried forward.
@@ -1396,6 +1459,22 @@ task-03 round 0: the backgrounded acpx-prompt.sh call is reported stopped, 19s
   Recorded in work_log as one line: killed at 19s, reattached, turn completed.
 ```
 
+### Example: the kill takes the turn too
+
+```
+task-05 round 0: the backgrounded acpx-prompt.sh call is reported stopped 24s after
+  launch — "was stopped because the system is running low on memory".
+  acpx-progress.sh → verdict 4 DEAD: turn pid gone, no stopReason, adapter pid "-".
+  wrapper-signals.log: "SIGTERM after 24s; turn pid 177082 gone; parent alive".
+  → setsid did NOT save it. Do not reattach; acpx-await.sh has nothing to wait for.
+  → §Recovering from a lost turn: confirm the topology is unchanged pre/post (it was —
+    the turn had committed nothing), capture evidence, close the session.
+  Provably inert: no repository change, so the loop guard is NOT charged and
+    max_rework_rounds is NOT charged. A fresh session retries the round.
+  Before relaunching, reclaim host memory at this boundary — @ is empty and nothing
+    is in flight, and launch is the only moment the harness checks.
+```
+
 ### Example: a turn that really did not finish
 
 ```
@@ -1549,9 +1628,12 @@ pass) and the orchestrating harness killing the call; both present identically i
 `sessions show`.
 
 ### The backgrounded call was killed, or exited `11`
-The **wrapper** was killed; the turn was not. `acpx-prompt.sh` runs acpx detached under
-`setsid`, so a kill aimed at the wrapper's process group cannot reach it. Do not open a
-fresh session and do not treat the round as lost. Run
+The **wrapper** was killed. Whether the *turn* went with it is not knowable from the exit
+status: `acpx-prompt.sh` runs acpx detached under `setsid`, which defeats the harness's
+`killpg` but not the per-pid tree walk it follows with (§Operating Constraints). Do not open
+a fresh session and do not treat the round as lost until you have checked. Run
+`scripts/acpx-progress.sh` first — on `4` (dead) go to §Recovering from a lost turn instead.
+If it reports the turn alive, run
 
 ```sh
 scripts/acpx-await.sh --out-dir {round_dir}
