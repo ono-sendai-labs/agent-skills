@@ -11,7 +11,8 @@
 #                       the pipe_close/lastExitAt signature informative
 #   status.txt          adapter status and pid
 #   turn.meta, wrapper-signals.log   which signal killed the wrapper, if any
-#   resources.txt       memory, swap, and per-name process counts at the kill
+#   resources.txt       /proc/meminfo, memory pressure, the largest resident
+#                       processes, and per-name process counts at the kill
 #   jj-st.txt, jj-log.txt, jj-diff-stat.txt   what the repository looked like
 #   raw/                out.json, out.err, and the wire-log tail
 #
@@ -21,11 +22,15 @@
 # stays in the gitignored run dir, where it is actually used, during the
 # incident. §4.7 MUST NOT copy raw/.
 #
-# resources.txt exists because the kills are front-loaded — every one landed in
-# the first ~2 minutes of a turn, which is when acpx spawns the adapter — and
-# adapter spawn under memory pressure is the standing hypothesis. It also
-# counts leaked helper processes (dbus-daemon, gnome-keyring-daemon), which
-# have been observed accumulating one pair per invocation in the sandbox.
+# resources.txt exists because the kills are launch-gated: every one landed
+# 3.9-66.7 s after launch, which is when acpx spawns the adapter, and every
+# survivor ran 136 s or longer. The condition is read at launch and never
+# re-evaluated. What discriminates the two outcomes is absolute MemAvailable,
+# with a measured margin of ~320 MB -- so `free` alone cannot see it, and an
+# earlier revision that captured only `free` produced four false negatives
+# about the resource hypothesis. Committed_AS was tried as the gauge and ruled
+# out: it moved 2 % across two survivals and a kill, and was lowest at a
+# survival.
 
 . "$(dirname "$0")/_common.sh"
 
@@ -64,7 +69,23 @@ WIRE=$(wire_log_for "$AGENT" "$SESSION" "$REPO")
 {
   echo "# resources at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo
+  # MemAvailable is the field that discriminates a killed launch from a surviving
+  # one (~320 MB margin, measured at 1 Hz). Committed_AS/CommitLimit are kept for
+  # continuity with earlier reports, where they were wrongly read as the trigger.
+  echo "## /proc/meminfo (the discriminating fields)"
+  grep -E '^(MemTotal|MemFree|MemAvailable|Buffers|Cached|SwapTotal|SwapFree|CommitLimit|Committed_AS):' \
+    /proc/meminfo 2>/dev/null || echo "(unavailable)"
+  echo
+  echo "## /proc/pressure/memory"
+  cat /proc/pressure/memory 2>/dev/null || echo "(unavailable)"
+  echo
   free -m 2>/dev/null || true
+  echo
+  # Top RSS across ALL processes, not just adapters: the largest process in the
+  # sandbox has been the project's own build server (a 1261 MB JVM), which belongs
+  # to no session and is invisible to an adapter-only view.
+  echo "## largest resident processes  (pid elapsed_s rss_kb comm)"
+  ps -eo pid=,etimes=,rss=,comm= 2>/dev/null | sort -k3 -rn | head -12 || true
   echo
   echo "## process counts by name"
   ps -eo comm= 2>/dev/null | sort | uniq -c | sort -rn | head -25
