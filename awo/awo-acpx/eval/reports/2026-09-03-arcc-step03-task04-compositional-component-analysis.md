@@ -4,6 +4,16 @@ Verbatim copy of the orchestrator's `work_log` for RUN 4, written incrementally
 during the run. Skill revision under test: `ecb43935`.
 Findings F-52 – F-59, continuing RUN 3's numbering.
 
+> **SUPERSEDED IN PART, read this first.** The kill *vector* identified below is correct and
+> was confirmed again by a sixth kill. The account of the *condition that triggers it* is not:
+> this report argues from `Committed_AS` overcommit, and a later control series (two survivals
+> and a kill in one 37-minute window) shows `Committed_AS` moves 2% across all three and is
+> lowest at a survival. The discriminator is absolute `MemAvailable`. The follow-on inference
+> in this report that spawn allocation matters "rather than residency" is wrong for the same
+> reason. See
+> [part 2](2026-09-04-arcc-step03-task04-05-compositional-component-analysis.md), which
+> carries the corrected model and the raw control data.
+
 **This run identified the kill vector.** Four runs had recorded backgrounded agent turns
 being killed by the orchestrating harness without explanation, and RUN 3's fix — running
 the turn detached under `setsid` so a kill would take only the wrapper — was the central
