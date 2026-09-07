@@ -76,6 +76,8 @@ Repository interaction is **jj-only**. Never use Git commands.
   covers, and record its verdicts in `work_log`. When unset — the prototype default — do those
   checks by inspection per §Validation Posture.
 - **max_rework_rounds** (optional, default: `4`): Rounds *after* the initial implementation.
+  A **soft limit**: it bounds grinding, not progress. See §4.4 — you may exceed it while the
+  loop is still converging, and you MUST record each round taken beyond it.
 - **turn_check_interval** (optional, default: `900` seconds): How long to wait before
   checking on a turn in flight, per §Supervising a running turn. Check-ins are an exception
   path — most turns finish inside this interval, so on a healthy run the check never fires
@@ -399,21 +401,53 @@ either way the partial transcript is on disk; that is the guarantee `setsid` fai
   fallback signals still work there: `acpx-prompt.sh` warns on an announced compaction,
   and that warning is the thing you actually act on.
 
-  **50 % is a flag, not a trigger, and do not project it linearly.** A reviewer session has
-  been carried to **60.8 %** of the window across a whole task with no compaction and no
-  degradation. Context grows with the *size of the delta under review*, not with the round
-  count: one observed session went +112k on a round that reviewed nine files and +41k on the
-  next, which reviewed two — so a projection built on the previous round's increment
-  over-predicts and will retire a session that had headroom. Weigh the replacement cost
-  honestly: an accumulated reviewer session is exactly what lets it say "still absent" about
-  its own prior finding, which is the mechanism that catches a non-convergent rework, and a
-  fresh one would have to be re-fed the old review to do the same. If a session compacts, or would plainly exceed the window on the next round,
-  **close it and open a fresh one for the next round**, and record that you did. The
-  producers' on-disk state — the task file, `result.yaml`, `review.yaml`, the scratchpad —
-  is designed to work from a cold session, so a restart costs one round of re-orientation
-  and nothing else. A session that compacted has silently lost the continuity this skill
-  exists to test, which is worse: you would be measuring a session that is no longer the
-  one you think it is.
+  **50 % is a flag, not a trigger, and do not project it linearly.** Context grows with the
+  *size of the delta under review*, not with the round count: one observed session went
+  +112k on a round that reviewed nine files and +41k on the next, which reviewed two — so a
+  projection built on the previous round's increment over-predicts. Do not retire a session
+  at 50 % on arithmetic alone.
+
+- **Retiring a session is a judgement call, and you are expected to make it.** Above the
+  50 % flag, weigh two signals and act on them without asking:
+
+  1. **Context.** Around **60 %** of the window, a restart is more likely right than wrong.
+     This is a signal, not a threshold to compute against — a session at 56 % whose next
+     round will plainly cross 60 % is already a candidate.
+  2. **Convergence.** A round that is **not converging** is a restart signal on its own, at
+     any context level. What that looks like in practice, all of it observed: a turn that
+     returns `end_turn` with **no repository change at all**; a turn far shallower than its
+     predecessors (31 tool calls against 138–648); a rework that **regresses** an acceptance
+     criterion that previously passed; a session that invents bespoke machinery rather than
+     reuse what earlier steps shipped, and keeps defending it across rounds; a session
+     asserting something false about **its own history** (one claimed its prior turns were
+     fabricated when the diffs were on disk and correct). Findings that plateau rather than
+     fall — 2 → 2 → 2 — count too.
+
+  When you retire, say so in `work_log` **with the numbers behind it**: the token figure and
+  percentage, the round's tool-call count, and the specific non-convergence signal. A
+  restart recorded without its evidence cannot be evaluated later.
+
+  Weigh the cost honestly in both directions. An accumulated reviewer session is what lets
+  it say "still absent" about its own prior finding, which is the mechanism that catches a
+  non-convergent rework, and a fresh one has to be re-fed the archived reviews to do the
+  same — so a warm session that is converging keeps its round. But the replacement is
+  **cheap and repeatedly productive**: the producers' on-disk state (the task file,
+  `result.yaml`, `review.yaml`, the scratchpad) is designed to work from a cold session, so
+  a restart costs one round of re-orientation. In observed runs a fresh reviewer found a
+  fail-closed hole four warm rounds had missed, and a fresh implementer — told explicitly to
+  prefer the existing machinery its predecessor had bypassed — closed the task in one round.
+  A long-lived session buys continuity and pays for it in independence.
+
+- **A compaction is not a judgement call.** If a session compacts, or would plainly exceed
+  the window on the next round, **close it and open a fresh one for the next round**, and
+  record that you did. A session that compacted has silently lost the continuity this skill
+  exists to test: you would be measuring a session that is no longer the one you think it is.
+
+- When you reopen a role mid-task, the fresh session's prompt MUST name the produced series,
+  the work log, and the path to the reviews or results it needs to read — and, where a
+  restart was triggered by a specific non-convergence signal, MUST name what its predecessor
+  got wrong. Do not merely re-issue the round's prompt: the point of the restart is that the
+  next turn approaches the round differently.
 - Compaction should now be **rare**. It was previously driven by a combination of a
   conservatively low harness context window and adapter respawns that re-sent the whole
   history uncached; `--ttl 0` removes the respawns, and the window should be set near the
@@ -948,9 +982,17 @@ Create `{run_dir_root}/{timestamp}-step{NN}-task-{MM}-{task_slug}/` and, inside 
   "base": {"change_id": "...", "bookmark": "..."},
   "produced_changes": [],
   "rounds": [],
+  "session_restarts": [],
   "outcome": null
 }
 ```
+
+`session_restarts` records every mid-task session replacement (§Prompting a session): one
+entry per restart with the role, the round it happened on, the retired and replacement
+session names, the trigger (`compaction`, `context`, `non_convergence`, `lost_turn`), and
+the numbers behind it — `totalTokens` and window percentage, the round's tool-call count,
+and the specific signal. It stays empty on most tasks; when it is not, it is the evidence
+for the skill's central question, so it is not optional.
 
 **Constraints:**
 - `produced_changes` is **derived by you from `jj log` after each turn**, never taken from
@@ -1139,7 +1181,7 @@ whole base-to-current range. Emit a fresh, self-contained review.yaml plus the
 | `review.verdict` | Action |
 |---|---|
 | `approved` | Proceed to §4.6 |
-| `changes_requested` | Go to §4.5, unless `max_rework_rounds` is exhausted |
+| `changes_requested` | Go to §4.5; once `max_rework_rounds` is exhausted, apply the convergence test below |
 | `escalated` | Go to §Escalation Handling |
 | `blocked` | Deprecated verdict from older skill versions; treat as `escalated` |
 
@@ -1151,9 +1193,31 @@ whole base-to-current range. Emit a fresh, self-contained review.yaml plus the
   the verdict alone does not show it.
 - You MUST write the round's `rounds` entry, the verdict, and the token line into
   `task-record.json` (§4.2) before proceeding.
-- When `max_rework_rounds` is exhausted without approval, read the last `review.yaml`. If the
-  outstanding findings are genuinely deferrable, record them in `work_log` and proceed to §4.6;
-  otherwise treat as a block and stop.
+- **`max_rework_rounds` is a soft limit.** Its job is to stop an orchestrator grinding a loop
+  that is going nowhere — not to fail a task that is one round from done. When it is
+  exhausted without approval, do not stop on the count alone. Read the last `review.yaml`
+  and the round history in `task-record.json` and ask whether the loop is **still
+  converging**: severity and count of open findings falling round over round (6 → 2 → 1 → 0
+  is converging; 2 → 2 → 2 is not), acceptance criteria trending toward pass, and each
+  round's findings being *new or narrower* rather than the same finding restated. Then:
+
+  - **Still converging** → take another round. Record in `work_log` that you exceeded the
+    limit, the round number, and the per-round finding and AC counts that justify it. Keep
+    doing this while the trend holds; each extra round is recorded the same way.
+  - **Stalled** — findings flat or rising, the same finding surviving two rounds, or a round
+    that regressed an AC — → the limit has done its job. Consider first whether this is a
+    **session** problem rather than a task problem: a stalled loop is one of the
+    non-convergence signals in §Prompting a session, and a fresh implementer or reviewer has
+    repeatedly broken exactly this kind of plateau. A restart-and-retry is the cheaper move
+    and does not itself need a dispensation. If the loop stalls again after a restart, stop
+    grinding: if the outstanding findings are genuinely deferrable, record them in
+    `work_log` and proceed to §4.6; otherwise treat as a block and stop and ask.
+
+  The limit is also not a licence to run indefinitely. A task that has taken **twice**
+  `max_rework_rounds` is a signal about the *task* — most likely mis-scoped, or resting on a
+  specification defect that belongs in §Escalation Handling rather than the code loop —
+  so at that point stop and ask even if the trend still looks positive, and say what the
+  trend was.
 
 #### 4.5 Rework Round — Same Implementer Session
 
@@ -1339,6 +1403,17 @@ reading in six months.
 - You MUST also record, for the prototype evaluation: wall-clock duration per round, and any
   observation about whether the implementer retained context across rework or the reviewer
   degraded across the step.
+- Two judgement calls are recorded here in full whenever they were made, because both are
+  discretionary and neither leaves a trace anywhere else:
+  - **Every session restart** — role, round, trigger and the numbers, mirroring
+    `session_restarts` (§4.2) — and whether the replacement paid for itself: what the fresh
+    session found, or failed to find, that the retired one had not.
+  - **Every round taken beyond `max_rework_rounds`** (§4.4) — the round number and the
+    per-round finding and AC counts that showed the loop was still converging.
+
+  Record the negative case as well: a task where a session passed the 50 % flag and was
+  **kept**, or where the round budget was not approached, is evidence about the thresholds
+  too, and one line covers it.
 
 ### 5. Close Out the Step
 
@@ -1858,8 +1933,8 @@ Mitigations, in the order they were adopted:
    `max_context_window` in `~/.codex/models_cache.json` is the ceiling (872000 for the
    gpt-5.6 family).
 4. Track it and act on it (§Prompting a session): record compaction per round, flag a session
-   above 50% of the window, and start a fresh session for the next round rather than let one
-   compact.
+   above 50% of the window, retire one on judgement as it approaches ~60% or stops
+   converging, and start a fresh session for the next round rather than let one compact.
 
 Note that (3) alone was tried twice and was not sufficient: raising 258400 → 500000 moved the
 threshold, and a task-scoped reviewer on a 5-change, 49-file task compacted anyway — it had
@@ -2031,8 +2106,8 @@ whether long-lived sessions are worth adopting. The differences to watch:
 | | `awo-orchestrator` | `awo-acpx` |
 |---|---|---|
 | Inner loop | `awo run` / `awo rework` | you, over acpx sessions |
-| Implementer context | fresh session per round | one session per task |
-| Reviewer context | fresh session per round | one session per task |
+| Implementer context | fresh session per round | one session per task, replaced mid-task on judgement (§Prompting a session) |
+| Reviewer context | fresh session per round | one session per task, replaced mid-task on judgement (§Prompting a session) |
 | Cross-task drift | plan-scoped `implementation-review` at the end | step-scoped `implementation-review` per step (§5.2) |
 | Role selection | CLI flags per run | `.agents/awo/acpx-config.yaml` (§Role Configuration) |
 | Model/effort | set once by the binary | pinned at session open, verified against the session record (§Sessions) |
