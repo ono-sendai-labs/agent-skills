@@ -2046,6 +2046,32 @@ attempt to reconstruct the series yourself.
 Stop and investigate. Record what changed. The review is not trustworthy, and neither is the
 change under review until you understand the mutation.
 
+**Separate a semantic mutation from a dropped build artifact — they are different incidents
+with opposite handling.** The paragraph above is written for the first: the reviewer edited
+source, or committed, or rewrote a change. That invalidates the review.
+
+The second is more common and mostly harmless: review tooling leaves a compiler or linker
+temp in the working copy — an observed case was a 1 960-byte `stdin.o` `ar` archive in the
+repo root — and because `jj` auto-tracks new files, the empty `@` becomes dirty and its
+commit id changes. Neither §Stray files in `@` nor the paragraph above fits: the first would
+have you **commit** it, which puts a binary temp permanently into the task series, and the
+second implies the review is void, which it is not.
+
+Handle it as its own case:
+1. Confirm it is inert before deciding. The test is whether any *produced* change was
+   touched: every change id and description in `produced_changes` still present and
+   unchanged, every `pr/` bookmark still on the change it was created on, and the file
+   itself not under any tracked source path. A commit-id change on the empty `@` alone is
+   expected — `@` is not a produced change, and this skill's topology checks compare change
+   ids, never commit ids (§4.6).
+2. If it is inert, **delete the file** — do not commit it, do not `jj abandon` anything —
+   and confirm `@` is empty and clean again.
+3. If any of (1) fails, it is not this case. Treat it as a semantic mutation and stop.
+4. Record it in `work_log` either way, with the file, its size, and which round's reviewer
+   produced it. A build artifact appearing in the repo root is also evidence about the
+   review's own environment, which is worth having when a later reviewer reports it could
+   not run the build at all.
+
 ### The reviewer's answers are degrading within a task
 Record it: which task, which round, what the reviewer missed or waved through, its
 `cache_read` at that point, and whether a compaction event preceded it. Watch particularly for
@@ -2066,6 +2092,13 @@ session. Degradation is missing things inside its own scope; this is its scope e
 ### Stray files in `@` at loop boundaries
 Commit them with a descriptive message if their origin is clear (usually an agent that finished
 work without committing). If not, stop and ask — never abandon them.
+
+**This is about work, not artifacts.** A build or tooling temp — an object file, an archive,
+a coverage or profile output, anything the build system would have produced — is not stray
+work and must not be committed here; see §The reviewer modified the repository, which covers
+it. If you cannot tell which you are looking at, that is a stop-and-ask, not a commit: a
+binary committed into a task series cannot be removed later without rewriting the series,
+which §Operating Constraints forbids.
 
 ## Artifacts
 
