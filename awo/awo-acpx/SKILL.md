@@ -843,7 +843,8 @@ scheme:
 | `pr/awo-generate-task-{slug}-step-{N}` | §2 done for step N — **skip §2** | §3, then §4 for the first task with no bookmark |
 | `pr/{slug}/step{NN}/task-{MM}-….code-task` | task MM done through §4.6 | the next task's §4.1 |
 | `pr/awo-record-{slug}-step{NN}-task-{MM}` | task MM's §4.7 bookkeeping done | the next task's §4.1 |
-| `pr/awo-step-review-{slug}-step-{N}` | §5.2 done | §5.3 |
+| `pr/awo-step-review-{slug}-step-{N}` | §5.2's first pass done | §5.3 if its verdict was `clean`; otherwise the step's remediation tasks, then §5.2 again |
+| `pr/awo-step-review-{slug}-step-{N}-r{R}` | §5.2 re-review pass R done | §5.3 if `clean`; otherwise §5.2's loop guard |
 | `pr/awo-step-complete-{slug}-step-{N}` | step N finished | step N+1, §1 |
 
 **Constraints:**
@@ -1525,6 +1526,15 @@ section covers, and it is not reachable by making the task reviewer better.
   so leaving the report uncommitted is not an option the rest of this skill permits.
   Use a conventional-commit message, and bookmark that change
   `pr/awo-step-review-{planning_slug}-step-{step_number}`.
+- **A re-review's report gets its own bookmark, suffixed `-r{N}`.** The name above belongs
+  to the first pass and `jj bookmark create` will — correctly — refuse to reuse it. Every
+  §5.2 pass after the first commits its own report and bookmarks it
+  `pr/awo-step-review-{planning_slug}-step-{step_number}-r{N}`, where `N` counts passes from
+  2: the first re-review is `-r2`. Do **not** move the original bookmark and do not amend
+  the first report into the second. The two reports are the evidence that remediation
+  worked — the first names the findings, the second adjudicates each one — and a step that
+  needed a remediation round should be visibly distinguishable in the bookmark list from one
+  that came back `clean` on the first pass.
 - **Loop guard:** at most `max_step_remediation_rounds` (default 1) remediation rounds per
   step. If a re-review still returns `remediation_required`, stop and ask — repeated
   remediation on one step means the step was mis-planned, which is the user's call.
@@ -2106,6 +2116,7 @@ pr/{planning_slug}/step{NN}/task-{MM}-{slug}.code-task  — the task's final tip
 pr/awo-record-{planning_slug}-step{NN}-task-{MM}        — the task's bookkeeping commit (§4.7); base of the next task
 pr/{planning_slug}-spec-fix-step{NN}-task{MM}           — an interposed spec repair commit
 pr/awo-step-review-{planning_slug}-step-{N}             — the step review report + remediation tasks (§5.2)
+pr/awo-step-review-{planning_slug}-step-{N}-r{R}        — each §5.2 re-review's report (§5.2), R counting from 2
 pr/awo-step-complete-{planning_slug}-step-{N}           — the checklist-only completion commit (§5.3)
 ```
 
