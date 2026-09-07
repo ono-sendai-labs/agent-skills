@@ -1270,11 +1270,22 @@ Unlike `awo run`, nothing finalizes the stack for you. You do it.
 
 **Constraints:**
 - You MUST verify `@` is empty; commit stray files if present.
-- You MUST describe the **oldest** produced change of this task with the **final** review's
-  `merge_request.title` and `merge_request.body`, using `jj describe`. On the normal path the
-  final review is the approved one. On §4.4's deferral branch — findings judged genuinely
-  deferrable — the final verdict is `changes_requested` and **there is no approved review**;
-  use that review's `merge_request` all the same.
+- You MUST describe the **oldest non-empty** produced change of this task with the **final**
+  review's `merge_request.title` and `merge_request.body`, using `jj describe`. On the normal
+  path the final review is the approved one. On §4.4's deferral branch — findings judged
+  genuinely deferrable — the final verdict is `changes_requested` and **there is no approved
+  review**; use that review's `merge_request` all the same.
+- **"Oldest non-empty", not "oldest".** A produced series can begin with an empty change,
+  and this is not a rare case: `jj` hands a session the empty working copy it inherits, and
+  a producer that describes and commits *on top of* it leaves that empty change at the
+  bottom of the range the §4.2 revset returns. Observed twice within a single task. Putting
+  the merge-request body on it would attach the PR description to a commit containing
+  nothing. So: skip leading changes whose `jj diff -r {change} --summary` is empty, and
+  describe the first one with content. Do **not** abandon or squash the empty changes —
+  they stay in the series (§Operating Constraints' no-rewriting rule), and you name them to
+  the reviewer as in-scope-but-not-implementation. Record the skip in `work_log`; an empty
+  change at the bottom of a series is also the signal that a producer miscounted what it
+  made, which §4.2 already tells you not to trust.
 - **You MUST check the merge request before using it, and rewrite title or body when they
   are written in the reviewer's voice rather than the change's.** The two observed failures
   are not equally likely, and the difference matters for how much effort each deserves:
@@ -1313,9 +1324,9 @@ Unlike `awo run`, nothing finalizes the stack for you. You do it.
   rediscover. A reviewer's `merge_request` has been observed omitting its own open
   `important` findings entirely, so you cannot rely on inheriting them — take them from the
   review body.
-- When a task produced exactly one change, "oldest" and "newest" are the same change:
-  describe it and bookmark it.
-- **If the oldest produced change is a `wip(...)` recovery commit** written under
+- When a task produced exactly one non-empty change, "oldest non-empty" and "newest" are the
+  same change: describe it and bookmark it.
+- **If the oldest non-empty produced change is a `wip(...)` recovery commit** written under
   §Recovering from a lost turn, its description is the only record of the recovery that
   lives in tracked history — `run_dir_root` is gitignored by default, so the evidence
   under it is not. The `wip` description's citation into `run_dir_root` is therefore
