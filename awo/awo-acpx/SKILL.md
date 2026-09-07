@@ -999,11 +999,19 @@ for the skill's central question, so it is not optional.
   the producer:
 
   ```sh
-  jj -R "$REPO" log --no-graph -r '{base}::@- ~ {base}' -T 'change_id ++ "\n"'   # oldest-to-newest
+  jj -R "$REPO" log --no-graph --reversed -r '{base}::@- ~ {base}' -T 'change_id ++ "\n"'
   ```
 
   Record it in oldest-to-newest order, and append a `rounds` entry per round with the role,
   prompt path, output path, verdict/status, and the token line.
+
+  **`--reversed` is load-bearing.** `jj log` prints **newest-first**; an earlier revision of
+  this command omitted the flag and annotated it `# oldest-to-newest`, which is exactly
+  backwards. Following that comment reverses `produced_changes`, and the reversal is
+  invisible on the one- and two-change tasks that are the common case — it surfaces on a
+  long series, where §4.6 then describes the *newest* change as the merge-request commit
+  instead of the oldest. Verify the order rather than trusting either the flag or this
+  paragraph: the first id printed must be a child of `{base}`, and the last must be `@-`.
 - **The write happens after every turn, in §4.3, §4.4 and §4.5 — not at §4.6.** This
   section says to "maintain" the record, and an earlier revision left it at that: no later
   section had a MUST that wrote to it, so the natural execution left the template values in
@@ -1720,7 +1728,7 @@ Step 03, 4 tasks generated → bookmark pr/awo-generate-task-{slug}-step-3
            session record at open
     round 0 → completed  (I1, stopReason=end_turn, 31m; one check-in at 15m)
               → review → approved
-    produced_changes derived from `jj log -r 'base::@- ~ base'` — NOT from the
+    produced_changes derived from `jj log --reversed -r 'base::@- ~ base'` — NOT from the
       implementer's own count of what it made
     describe I1 with merge_request (title's project tag corrected to the plan's);
       bookmark pr/{slug}/step03/task-01-….code-task on I1
