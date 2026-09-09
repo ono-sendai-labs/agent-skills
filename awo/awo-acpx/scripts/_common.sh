@@ -19,6 +19,42 @@ need() { command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
 #             turn keeps running. Verified still present in acpx 0.13.2.
 acpx_globals() { printf -- '--ttl 0 --cwd %s' "$1"; }
 
+# Sandbox mode for codex-acp sessions.
+#
+# codex-acp reads INITIAL_AGENT_MODE at ADAPTER SPAWN and has no CLI flag for
+# it (it takes no options at all). Its default mode, `agent`, is a codex
+# `workspaceWrite` sandbox with `writableRoots: []` — only the session cwd is
+# writable. That breaks Bazel on this project, because the output base lives at
+# ~/.cache/bazel, outside the workspace:
+#
+#   FATAL: Output base directory '/home/…/.cache/bazel/_bazel_…' must be
+#          readable and writable.
+#   touch: cannot touch '/home/…/.cache/bazel/…': Read-only file system
+#
+# Verified by running one identical probe under each mode: `agent` failed all
+# three of `bazel info`, `bazel build` and a direct write; `agent-full-access`
+# passed all three. This is the cause of the "reviewer could not run the gate"
+# reports — the reviewer was not misconfigured and its disclosure was accurate.
+#
+# `acpx … set mode agent-full-access` does NOT work: the adapter answers
+# `Internal error` and the session record still reads `agent`. The environment
+# variable is the only working channel, so it is set here, where every wrapper
+# in this skill picks it up.
+#
+# Scope and posture. This is deliberately set inside the skill rather than in
+# ~/.acpx/config.json, so it applies ONLY to awo-acpx sessions and leaves
+# interactive acpx use of codex on its default sandbox. These sessions already
+# run --approve-all with write access to the repository, so the mode is not the
+# thing standing between the agent and the working copy; what it additionally
+# grants is write access outside the workspace and network access. Override with
+# AWO_ACPX_AGENT_MODE=agent (or read-only) if a run does not need Bazel.
+#
+# It must be exported before the QUEUE OWNER spawns. With --ttl 0 the owner
+# outlives the turn, so a session whose owner started without this keeps the old
+# mode until it is closed; the value is recorded per session as the `mode`
+# config option and acpx-open.sh verifies it.
+export INITIAL_AGENT_MODE="${AWO_ACPX_AGENT_MODE:-agent-full-access}"
+
 # Absolute path of a session's ACP wire log, or empty if unknown.
 wire_log_for() { # agent session repo
   local rec

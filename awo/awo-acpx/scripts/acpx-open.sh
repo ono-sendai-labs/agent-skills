@@ -46,9 +46,10 @@ fi
 REC=$(acpx --cwd "$REPO" "$AGENT" sessions show "$SESSION" | awk '/^id:/{print $2}')
 [ -n "$REC" ] || die "could not resolve session record id for $SESSION"
 
-python3 - "$HOME/.acpx/sessions/$REC.json" "$MODEL" "$EFFORT" <<'PY'
+python3 - "$HOME/.acpx/sessions/$REC.json" "$MODEL" "$EFFORT" "${INITIAL_AGENT_MODE:-}" <<'PY'
 import json, sys
-path, want_model, want_effort = sys.argv[1], sys.argv[2], sys.argv[3]
+path, want_model, want_effort, want_mode = (
+    sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4])
 d = json.load(open(path))
 a = d.get("acpx") or {}
 opts = {o.get("id"): o.get("currentValue") for o in (a.get("config_options") or [])}
@@ -64,9 +65,22 @@ if want_effort and want_effort != "null" and effort != want_effort:
          if x.get("id") == "reasoning_effort"), []))]
     if levels:
         bad.append(f"  levels this model accepts: {', '.join(str(l) for l in levels)}")
+# Sandbox mode, when the adapter exposes one (codex does; opencode does not).
+# It is set through INITIAL_AGENT_MODE at adapter spawn, never with `set` —
+# see _common.sh. A session that silently kept the default `agent` mode cannot
+# run Bazel on this project, and that failure surfaces much later and much
+# more confusingly than here.
+mode = opts.get("mode")
+if want_mode and mode is not None and mode != want_mode:
+    bad.append(f"mode: wanted {want_mode}, record says {mode!r}"
+               "\n    INITIAL_AGENT_MODE is read when the QUEUE OWNER spawns."
+               "\n    A live owner started without it keeps the old mode:"
+               "\n    close the session (acpx-close.sh) and re-open.")
+
 print(f"session record: {path}")
 print(f"model={model} reasoning_effort="
-      f"{effort if effort is not None else '(unset)'}")
+      f"{effort if effort is not None else '(unset)'}"
+      f"{'' if mode is None else ' mode=' + str(mode)}")
 if bad:
     print("MISMATCH:", *bad, sep="\n  ", file=sys.stderr)
     raise SystemExit(1)
