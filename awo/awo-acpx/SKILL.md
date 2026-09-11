@@ -498,11 +498,28 @@ either way the partial transcript is on disk; that is the guarantee `setsid` fai
   non-convergent rework, and a fresh one has to be re-fed the archived reviews to do the
   same — so a warm session that is converging keeps its round. But the replacement is
   **cheap and repeatedly productive**: the producers' on-disk state (the task file,
-  `result.yaml`, `review.yaml`, the scratchpad) is designed to work from a cold session, so
-  a restart costs one round of re-orientation. In observed runs a fresh reviewer found a
-  fail-closed hole four warm rounds had missed, and a fresh implementer — told explicitly to
-  prefer the existing machinery its predecessor had bypassed — closed the task in one round.
-  A long-lived session buys continuity and pays for it in independence.
+  `result.yaml`, `review.yaml`, the scratchpad) is designed to work from a cold session. In
+  observed runs a fresh reviewer found a fail-closed hole four warm rounds had missed, and a
+  fresh implementer — told explicitly to prefer the existing machinery its predecessor had
+  bypassed — closed the task in one round. A long-lived session buys continuity and pays for
+  it in independence.
+
+  **"A restart costs one round of re-orientation" is too pessimistic at scale, and the
+  measured cost has been close to zero.** On the largest task of one run, a replacement
+  implementer handed its predecessor's scratchpad ran to 2265 tool calls against that
+  predecessor's 2353 and closed a critical finding, six important findings and two injected
+  items in a single round. That task took three restarts — no producer session survived more
+  than one round — and still converged in three rounds. The result is about the *artifacts*,
+  not the sessions: continuity is worth having, and it is evidently not what makes a large
+  task tractable.
+
+  **What decides it above the flag is the size of the remaining work, not the percentage.**
+  The counter-case is recorded too: a task kept both sessions past 50 % because what was
+  left was one test-matrix entry plus some assertions — the implementer's next round took
+  **112 seconds** against round 0's 2258, and a restart would have cost more in
+  re-orientation than the whole remainder of the task. Read the two together: a large
+  pending rework on a session near the window is the case for retiring it, and a small one
+  is the case against, at the same percentage.
 
 - **A compaction is not a judgement call.** If a session compacts, or would plainly exceed
   the window on the next round, **close it and open a fresh one for the next round**, and
@@ -510,9 +527,13 @@ either way the partial transcript is on disk; that is the guarantee `setsid` fai
   exists to test: you would be measuring a session that is no longer the one you think it is.
 
 - When you reopen a role mid-task, the fresh session's prompt MUST name the produced series,
-  the work log, and the path to the reviews or results it needs to read — and, where a
-  restart was triggered by a specific non-convergence signal, MUST name what its predecessor
-  got wrong. Do not merely re-issue the round's prompt: the point of the restart is that the
+  the work log, the path to the reviews or results it needs to read, **and the predecessor's
+  own scratchpad files** (`context.md`, `plan.md`, `progress.md`, `work.log`) so the task is
+  re-read rather than re-derived — that naming is what makes the restarts above cost nearly
+  nothing. It MUST also say plainly that the predecessor was retired for context and that its
+  committed work is not in doubt on those grounds, and forbid amending the inherited changes.
+  Where a restart was triggered by a specific non-convergence signal, it MUST name what its
+  predecessor got wrong. Do not merely re-issue the round's prompt: the point of the restart is that the
   next turn approaches the round differently.
 - Compaction should now be **rare**. It was previously driven by a combination of a
   conservatively low harness context window and adapter respawns that re-sent the whole
