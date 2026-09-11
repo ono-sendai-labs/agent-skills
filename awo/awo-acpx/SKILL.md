@@ -444,14 +444,24 @@ either way the partial transcript is on disk; that is the guarantee `setsid` fai
   whether the turn compacted** — `acpx-prompt.sh` prints a warning when the agent announces
   one. "No compaction" is a result worth recording, not an absence worth omitting; the
   point of tracking it is to find out whether the current configuration has eliminated it.
-- **Context headroom.** After each turn, compare `totalTokens` against the harness's
-  configured context window. If a session exceeds **50%** of the window, say so in
+- **Context headroom.** After each turn, compare `totalTokens` against the context window
+  the harness is actually enforcing. If a session exceeds **50%** of the window, say so in
   `work_log`. The window is a **per-harness** figure and one of them does not publish it:
-  for codex roles it is `model_context_window` in `~/.codex/config.toml` (850000 in the
-  environment this was written for, so the threshold is 425 000); for the opencode
-  implementer there is no such figure anywhere in its config, and this is the session the
-  skill most cares about keeping uncompacted. Resolve each role's denominator during
-  preflight and record it. Where none exists, record `totalTokens` per round and say
+  for the opencode implementer there is no such figure anywhere in its config, and this is
+  the session the skill most cares about keeping uncompacted. Resolve each role's
+  denominator during preflight and record it.
+
+  **For codex, take the denominator from the harness's own `token_count` event, not from
+  `~/.codex/config.toml`.** Every such event in the session's rollout
+  (`~/.codex/sessions/{YYYY}/{MM}/{DD}/rollout-*.jsonl`) reports the
+  `model_context_window` the harness is governing by, and it has been observed **disagreeing
+  with the configured value**: `config.toml` said 850 000 while the events reported
+  **807 500**. Percentages computed against the config figure were therefore all ~5 % low —
+  enough that the 50 % flag failed to fire on a session that had actually crossed it, and
+  a run recomputed three sessions' figures after catching it. Read the real denominator once
+  per role, from the first turn's rollout, and record *where you read it from* — an earlier
+  run reverted to the config value at its next session start, which is exactly how a
+  corrected denominator gets silently un-corrected. Where none exists, record `totalTokens` per round and say
   explicitly that **no threshold was evaluable** — an orchestrator that silently skipped
   the check is indistinguishable from one that evaluated it and found nothing. The
   fallback signals still work there: `acpx-prompt.sh` warns on an announced compaction,
@@ -2029,7 +2039,9 @@ Mitigations, in the order they were adopted:
 3. Raise the harness's context window to near the model's real capability. For codex this is
    `model_context_window` / `model_auto_compact_token_limit` in `~/.codex/config.toml`;
    `max_context_window` in `~/.codex/models_cache.json` is the ceiling (872000 for the
-   gpt-5.6 family).
+   gpt-5.6 family). Having *set* it there, do not then use it as the denominator: verify
+   what the harness reports back in its `token_count` events, which is the figure it
+   enforces and has been observed lower than the configured one (§Prompting a session).
 4. Track it and act on it (§Prompting a session): record compaction per round, flag a session
    above 50% of the window, retire one on judgement as it approaches ~60% or stops
    converging, and start a fresh session for the next round rather than let one compact.
