@@ -1368,15 +1368,29 @@ Unlike `awo run`, nothing finalizes the stack for you. You do it.
     reviewer-voice prose addressed to an orchestrator, carrying raw change ids that mean
     nothing to a PR reader, about to be permanently attached to the commit as its PR
     description. Budget for rewriting it every time.
-  - **Title — occasional.** Once in eight, a bracketed project tag the reviewer
-    **invented**: `[Authority Lattice: Step 03/Task 02]` where every other commit in the
-    plan reads `[Compositional Analysis: Step NN/Task MM]`. That tag is what a human scans
-    `jj log` for, so a one-off name silently breaks the grouping for the whole plan. Check
-    it against the planning slug's established convention — the sibling commits below you
-    are the reference — and correct it. Do **not** try to prevent it by adding a convention
-    note to the §4.4 prompt: an un-steered reviewer produced the correct tag on the next
-    task, so a single steered success was not evidence the note works, and this correction
-    is reliable precisely because it does not depend on the reviewer at all.
+  - **Title — occasional, and it fails in three different shapes.** All three are
+    observed, and the middle one is why this check must be mechanical rather than a glance:
+    - A bracketed project tag the reviewer **invented**: `[Authority Lattice: Step 03/Task
+      02]` where every other commit in the plan reads `[Compositional Analysis: Step NN/Task
+      MM]`. Obviously wrong once you look.
+    - A **near miss** of the same tag: `[Component Analysis: Step 08/Task 06]`. It reads
+      correct, it is plausible for the project, and it is wrong — which is worse than the
+      invented one, because a glance passes it.
+    - **No conventional-commit type at all**, or a bogus one: a bare
+      `complete surface-boundary cutover …`, and a `review: prune source inputs …` that
+      describes the reviewer's activity rather than the change's, where every sibling commit
+      in the plan uses `feat(scope):` / `fix(scope):`.
+
+    The tag is what a human scans `jj log` for, so a one-off name — or a one-character
+    difference — silently breaks the grouping for the whole plan. So do not verify it by
+    reading it. **Take the tag from a sibling commit below you and compare the two strings
+    for equality**, and separately assert the subject begins with a conventional-commit type.
+    Both checks are one command and neither depends on noticing anything.
+
+    Do **not** try to prevent any of this by adding a convention note to the §4.4 prompt: an
+    un-steered reviewer produced the correct tag on the next task, so a single steered
+    success was not evidence the note works, and this correction is reliable precisely
+    because it does not depend on the reviewer at all.
 
   Rewrite in the change's own voice, preserving **every** substantive claim the reviewer
   made, including every finding left open **at any severity** — not only those phrased as
