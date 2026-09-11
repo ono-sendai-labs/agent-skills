@@ -103,10 +103,12 @@ Repository interaction is **jj-only**. Never use Git commands.
   are not trustworthy on their own; the scripts encode what is. If a script is missing or
   not executable, stop and ask rather than hand-rolling the invocation.
 - You MUST record a quota reading at preflight (`scripts/codex-quota.sh`, §Operating
-  Constraints) alongside the resolved roles, and re-measure it at each task boundary. A run
-  that does not know where it sits in the weekly window cannot tell whether its remaining
-  steps fit, and the answer is a planning input: one observed step cost roughly **28 % of a
-  weekly window** across 30 agent turns.
+  Constraints) alongside the resolved roles, **with its age**, and re-measure it at each task
+  boundary. A run that does not know where it sits in the weekly window cannot tell whether
+  its remaining steps fit, and the answer is a planning input: one observed step cost roughly
+  **28 % of a weekly window** across 30 agent turns. At preflight the reading is normally
+  inherited from the previous run and is **not** a launch gate — see §Operating Constraints:
+  launch, then measure from the first turn's own rollout.
 - You MUST verify the producer skills are reachable by both harnesses before the first task —
   normally as symlinks in `{repo}/.agents/skills/` (`task-to-code`, `code-task-review`,
   `plan-to-tasks`, `implementation-review`). See §Troubleshooting if an agent cannot find a skill.
@@ -286,8 +288,29 @@ deliberately not done incidentally, mid-run, where it would confound rather than
   The 5-hour window is the opposite: it rolls, so holding an expensive turn until it resets
   is usually cheaper than losing the turn to it.
 
-  Two ways to misread the reading. A block whose `resets_at` has already passed is **stale,
-  not current** — `rate_limits` refresh only when a turn runs, so the figure predates the
+  **A reading is produced only by a turn, so a resumed run cannot measure quota until it
+  launches one.** There is no poll, no endpoint, nothing to wait for: `rate_limits` appear
+  only as a side effect of a turn running. The newest block on disk is therefore whatever the
+  *previous* run left behind, and after a stop it can be arbitrarily old — `codex-quota.sh`
+  prints the reading's age and says so loudly past 30 minutes. Two consequences, and the
+  second is the one that bites:
+
+  1. **A pre-break reading is a lower bound on usage, never an upper one.** Between the
+     reading and now the windows can only have replenished — by rolling, or by a manual
+     reset the user redeemed — and can never have worsened, because nothing ran. So a bad
+     old figure is uninformative, not alarming.
+  2. **Do not gate the first launch of a resumed run on it, and do not stop and ask on it.**
+     That is a deadlock: the only action that can refute the figure is the launch the
+     stop-and-ask is refusing. **Launch anyway** — the cheapest useful turn if the old
+     reading looks bad, since task generation and reviewer turns cost 1–2 % — and take the
+     real measurement from *that* turn's own rollout, then gate every subsequent launch on
+     it. The weekly stop-and-ask above applies to a reading produced **in this run**; it
+     does not apply to one inherited across a break. This is not hypothetical: one run's
+     preflight read primary 99 % / secondary 93 %, the user reported having redeemed a
+     manual reset, and the first turn's own rollout came back **18 % / 3 %**.
+
+  Two further ways to misread the reading. A block whose `resets_at` has already passed is
+  **stale, not current** — `rate_limits` refresh only when a turn runs, so the figure predates the
   reset and quota has almost certainly replenished; the script says so rather than making you
   infer it. And do **not** estimate burn by summing `last_token_usage.total_tokens`: with
   prompt caching every request re-reports several hundred thousand cached-read tokens and the

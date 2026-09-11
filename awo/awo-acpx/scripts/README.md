@@ -112,7 +112,16 @@ outside the adapter: the turn does not error, the adapter does not exit, `status
 `running`, and `acpx-progress.sh` can only call it STALLED. One turn was lost that way and
 diagnosed an hour later by asking the user.
 
-`codex-quota.sh` encodes two things that are easy to get wrong by reading the JSON directly.
+A reading exists only because a turn produced it — there is no poll — so the newest block on
+disk belongs to whatever ran last, and at the start of a resumed run that is the *previous*
+run. `codex-quota.sh` prints the reading's age for that reason, and says plainly past 30
+minutes that the figure cannot be refreshed without launching. Such a reading is a lower bound
+on usage and never an upper one (the windows can only have replenished since), so it must not
+gate the first launch — stopping on it is a deadlock, because the launch is the only thing that
+can refute it.
+
+`codex-quota.sh` encodes two further things that are easy to get wrong by reading the JSON
+directly.
 A block whose `resets_at` has passed is **stale, not current** — `rate_limits` refresh only
 when a turn runs, so the figure predates the reset and the quota has almost certainly
 replenished. And the weekly window's **93 % launch floor** is measured, not guessed: the
