@@ -13,6 +13,8 @@ work in each of two evaluation runs.
 | `acpx-evidence.sh` | Capture a lost turn's evidence in two tiers: small interpreted files, plus a `raw/` that stays gitignored |
 | `acpx-close.sh` | Close one session, or `--sweep` every `awo-*` session for a repo |
 | `jj-change-id.sh` | Print a **full** 32-character change id, or `--check` that ids resolve **and are change ids** |
+| `codex-quota.sh` | Read the codex harness's current rate-limit windows out of its own rollout; exit `1` above a threshold, `2` if no reading exists |
+| `quota-burn.py` | Attribute weekly-quota burn to individual sessions, for planning how much of a run fits in a window |
 
 ## What they encode
 
@@ -99,6 +101,30 @@ the skill forbids. §4.6's `jj describe` rewrites the commit id of every earlier
 in the task, so a commit id resolves cleanly before finalisation and dangles after it:
 a task record valid until §4.6 and silently wrong afterwards. It is the dangerous
 malformation precisely because it *does* resolve.
+
+**Quota is readable, but only from the harness's own record, and only before the
+launch.** acpx surfaces no quota at all. The codex harness writes a `rate_limits` block on
+every `token_count` event in `~/.codex/sessions/{YYYY}/{MM}/{DD}/rollout-*.jsonl`, carrying a
+primary (5-hour) and a secondary (weekly) window, so the newest such block in the newest
+rollout is the freshest reading available locally — free, and no network. It has to be read
+*before* a launch because exhausting a window mid-turn is indistinguishable from a hang from
+outside the adapter: the turn does not error, the adapter does not exit, `status` still reads
+`running`, and `acpx-progress.sh` can only call it STALLED. One turn was lost that way and
+diagnosed an hour later by asking the user.
+
+`codex-quota.sh` encodes two things that are easy to get wrong by reading the JSON directly.
+A block whose `resets_at` has passed is **stale, not current** — `rate_limits` refresh only
+when a turn runs, so the figure predates the reset and the quota has almost certainly
+replenished. And the weekly window's **93 % launch floor** is measured, not guessed: the
+largest single session burn observed is 5 % of the weekly window (a 67-minute, 2353-tool-call
+implementer turn), against 3–5 % for a typical implementer round and 1–2 % for a reviewer.
+
+`quota-burn.py` exists because the obvious way to measure that — summing
+`last_token_usage.total_tokens` — **overcounts by more than an order of magnitude**. Prompt
+caching makes every request re-report several hundred thousand cached-read tokens; summing one
+day's events gave ~370 M tokens for 23 % of a window. The percentage field is the billed
+truth. One acpx session is one rollout file, so a rollout's first and last snapshot bracket
+that session's whole cost, which is what the script reports.
 
 ## Requirements
 

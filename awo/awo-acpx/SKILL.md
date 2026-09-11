@@ -102,6 +102,11 @@ Repository interaction is **jj-only**. Never use Git commands.
   change id through `scripts/jj-change-id.sh`. The raw CLI's exit codes and status output
   are not trustworthy on their own; the scripts encode what is. If a script is missing or
   not executable, stop and ask rather than hand-rolling the invocation.
+- You MUST record a quota reading at preflight (`scripts/codex-quota.sh`, §Operating
+  Constraints) alongside the resolved roles, and re-measure it at each task boundary. A run
+  that does not know where it sits in the weekly window cannot tell whether its remaining
+  steps fit, and the answer is a planning input: one observed step cost roughly **28 % of a
+  weekly window** across 30 agent turns.
 - You MUST verify the producer skills are reachable by both harnesses before the first task —
   normally as symlinks in `{repo}/.agents/skills/` (`task-to-code`, `code-task-review`,
   `plan-to-tasks`, `implementation-review`). See §Troubleshooting if an agent cannot find a skill.
@@ -252,6 +257,49 @@ deliberately not done incidentally, mid-run, where it would confound rather than
      not prevented, and that paragraph is what bounds it. Because kills are launch-gated
      they usually cost seconds of agent work — the one turn that batched its work to a
      single commit at the end lost 65 minutes.
+- **Usage quota is a launch gate, and exhausting it mid-turn presents as a stall.** acpx
+  does not surface quota at all — no flag, no subcommand — but the codex harness records it
+  on every `token_count` event in its rollout
+  (`~/.codex/sessions/{YYYY}/{MM}/{DD}/rollout-*.jsonl`), as a `rate_limits` block carrying a
+  **primary** (5-hour) and a **secondary** (weekly) window. `scripts/codex-quota.sh` reads
+  the most recent block from the most recently written rollout. It costs nothing and touches
+  no network, so there is no reason not to run it before every launch.
+
+  **Run it before the launch, because after the launch it is too late to be useful.** A turn
+  that exhausts the window mid-flight does not error and the adapter does not exit: it
+  completes a tool call, then emits no further ACP event while `status` still reads
+  `running`. `acpx-progress.sh` necessarily calls that STALLED, and there is no signal
+  available to it that would say "quota" — one turn was lost this way and the cause was only
+  established an hour later by asking the user. Checking beforehand converts an hour of
+  waiting into one cheap command.
+
+  Measured costs against the **weekly** window, per acpx session across all its rounds: an
+  implementer round **3–5 %**, a reviewer round **1–2 %**, a whole two-round task **4–5 %**,
+  and the largest single session observed **5 %** (a 67-minute, 2353-tool-call implementer
+  turn). Reviewers are close to free in quota terms, so there is never a quota case for
+  skipping a review. Size headroom against the maximum, not the average: **below 93 % launch
+  freely; between 93 % and ~95 % only reviewer-sized turns; above that a large implementer
+  turn can exhaust the window mid-flight.** 93 % is the launch floor the script encodes.
+
+  **Weekly exhaustion is a stop-and-ask, not something to wait out.** The reset is days away,
+  the user holds manual resets that replenish it, and there is no local API to trigger one.
+  The 5-hour window is the opposite: it rolls, so holding an expensive turn until it resets
+  is usually cheaper than losing the turn to it.
+
+  Two ways to misread the reading. A block whose `resets_at` has already passed is **stale,
+  not current** — `rate_limits` refresh only when a turn runs, so the figure predates the
+  reset and quota has almost certainly replenished; the script says so rather than making you
+  infer it. And do **not** estimate burn by summing `last_token_usage.total_tokens`: with
+  prompt caching every request re-reports several hundred thousand cached-read tokens and the
+  sum overcounts by more than an order of magnitude (~370 M tokens for 23 % of a window).
+  The percentage is the billed truth; tokens are a scale indicator. `scripts/quota-burn.py`
+  attributes burn per session correctly, by bracketing each rollout's first and last snapshot
+  — one acpx session is one rollout file.
+
+  This is a **codex-only** reading. The opencode adapter publishes no equivalent, so for an
+  opencode role record that no quota was evaluable, exactly as §Prompting a session requires
+  for a context denominator that does not exist. That role's exhaustion will still arrive as
+  a stall, and asking the user is then the only way to name it.
 - **One turn at a time per session.** acpx queues concurrent prompts to the same session through
   its queue owner. Never issue a second prompt to a session with a turn in flight — including
   one you believe is lost but have not confirmed idle.
@@ -373,6 +421,14 @@ either way the partial transcript is on disk; that is the guarantee `setsid` fai
   MUST NOT double-background it (no `&` or `nohup` inside the backgrounded call) — the
   harness would report completion as soon as the launcher returned while the real work
   continued detached.
+- **Check quota immediately before the launch**, with
+  `scripts/codex-quota.sh [threshold]`, and record the reading alongside the round's token
+  line. This belongs at the same task boundary as §Operating Constraints' memory
+  reclamation, for the same reason: both conditions are read at launch and neither can be
+  repaired mid-turn. Exit `1` means the primary window is at or above the threshold —
+  hold an expensive turn until it rolls rather than launching into a near-certain mid-turn
+  exhaustion, which is the one failure that cannot be waited out or distinguished from a
+  hang. Take the weekly window's 93 % launch floor from the same output.
 - **No `--timeout`, ever.** acpx's `--timeout` does not cancel a turn cooperatively: it
   pipe-closes the client and returns **exit 0 with empty output** while the agent keeps
   running. Verified still present in 0.13.2. A turn is bounded by supervision
@@ -553,7 +609,12 @@ decision it had taken forty minutes before the result was readable.
   Those lines are how a run's real cost is reconstructed afterwards.
 - On `1` (stalled): check once more after another `turn_check_interval`. If it is still
   stalled with the same last tool, **stop and ask** — quote the last tool call and the
-  elapsed time. Do not cancel it yourself: `acpx cancel -s` exists but its cooperativeness
+  elapsed time. Before you do, run `scripts/codex-quota.sh`: a STALLED verdict with a live
+  adapter, a *completed* last tool call and no child process doing work is the exact
+  signature of a mid-turn quota exhaustion, and the reading names it in one command. The
+  script is the cheap half of the answer; the user is the other half, since a role whose
+  harness publishes no quota leaves asking as the only way to tell. Do not wait longer in
+  the hope of resolving it — a weekly window does not roll inside a turn. Do not cancel it yourself: `acpx cancel -s` exists but its cooperativeness
   is untested, and the one cancellation mechanism this skill has tested (`--timeout`)
   destroys work.
 - On `4` (dead): the turn is over and it was lost. Go straight to §Recovering from a lost
@@ -1922,6 +1983,14 @@ Run `scripts/acpx-progress.sh` (§Supervising a running turn). It reports the ag
 ACP event, the most recent tool call, and whether the detached turn's own process is still
 alive — which is what actually distinguishes a working turn from a dead one. Exit `4` means
 dead: stop waiting and go to §Recovering from a lost turn.
+
+**A stall that is really a quota exhaustion looks identical from outside.** The turn does
+not error, the adapter does not exit, and `status` still reads `running`; it simply completes
+a tool call and stops emitting events. `acpx-progress.sh` has no signal that would name the
+cause, so run `scripts/codex-quota.sh` (§Operating Constraints) as soon as a stall is
+suspected — and check quota before launching, which is the only point at which the answer is
+still actionable. On a role whose harness publishes no quota, asking the user is the cheapest
+confirmation; waiting longer is not, because a weekly window's reset is days away.
 
 Do **not** decide this from `acpx status -s`. It has reported `running` with a live pid for
 five minutes after a turn was already dead, and it reports `running` for a merely-idle
