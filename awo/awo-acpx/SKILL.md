@@ -185,7 +185,7 @@ deliberately not done incidentally, mid-run, where it would confound rather than
 ## Operating Constraints
 
 - **Long-running commands.** Agent turns routinely run for tens of minutes; the longest
-  observed was 65. You MUST run them as background tasks and wait for the completion
+  observed was **90** (2208 tool calls, a Bazel golden task). You MUST run them as background tasks and wait for the completion
   notification. Do NOT double-background (no `&` or `nohup` inside a `run_in_background`
   call) — the harness would report completion as soon as the launcher returns while the
   real work continues detached. `acpx-prompt.sh` detaching the *turn* is not that: the
@@ -564,8 +564,11 @@ and `acpx-prompt.sh` is what checks it.
 
 ### Supervising a running turn
 
-A real implementation turn runs for tens of minutes; the longest observed was 65. There
-is no timeout, so you supervise instead.
+A real implementation turn runs for tens of minutes; the longest observed was **90**, at
+2208 tool calls. There is no timeout, so you supervise instead. That turn was supervised by
+seven check-ins, every one of them `WORKING` with a monotonically rising event count
+(197 → 437 → 707 → 861 → 1065 → 1211 → 1637) — which is what a long healthy turn looks like,
+and what distinguishes it from the stall it would otherwise be mistaken for.
 
 **Check-ins are an exception path, not the routine record.** Most turns finish inside
 `turn_check_interval` — observed completions span roughly 2.5 to 53 minutes, and the
@@ -1144,8 +1147,18 @@ uncommitted work is lost when that happens.
 - The incremental-commit paragraph is **required**, not decorative. `task-to-code`'s natural
   shape is explore → plan → implement → one commit at the end, which is maximally fragile to
   an interruption: the one task that ran that way lost 65 minutes of work, and the one that
-  committed incrementally lost nothing. This paragraph is the only prompt padding this skill
-  permits; §4.5 still forbids padding the rework prompt.
+  committed incrementally lost nothing. When a later turn died mid-round, three of its five
+  fixes were already on disk as separate described changes. This paragraph is the only prompt
+  padding this skill permits; §4.5 still forbids padding the rework prompt.
+- **The paragraph is not reliably followed, and you cannot tell until the turn ends.** A
+  90-minute round under this exact prompt held all of its work in `@` until the last minute;
+  the very next task, same prompt, committed the cutover mid-turn. The variable appears to be
+  whether the task has a natural early checkpoint, not the instruction. So keep sending it —
+  it is free and it has demonstrably bounded a loss — but do not read it as a guarantee that
+  a long turn's work is safe. Check-ins report tool-call counts, not commits, and
+  §Supervising forbids inspecting the repository while a turn is in flight, so the exposure
+  of a long turn is unknowable until it returns. Where that matters, the lever you actually
+  have is task size at §2, not prompt wording.
 - When it returns, you MUST perform the post-implementation checks in §Validation Posture, then
   read `result.yaml`.
 - You MUST then write the round into `task-record.json` (§4.2): re-derive `produced_changes`
