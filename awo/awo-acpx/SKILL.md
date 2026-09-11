@@ -1252,9 +1252,15 @@ whole base-to-current range. Emit a fresh, self-contained review.yaml plus the
   happily sliced the concatenated blob into five aligned windows that were each a real,
   resolvable change id — and `--check` then returned five `ok`s on a prompt containing no
   list. A verification that reconstructs its input from the same corruption it is meant to
-  detect is worthless. (Both malformed prompts were caught at composition, but that was
-  the second hand-assembly error in one run; prefer building the list from the revset's
-  output directly over retyping or reformatting it.)
+  detect is worthless. The split check is what catches the third observed error too, and
+  that one is worth naming because it looks correct: `paste -sd', '` does **not** join with
+  `", "`. `paste`'s `-d` takes a *list* of delimiters and cycles through them, so it joined
+  with a comma, then a space, then a comma — turning three ids into `[a,b c]`. Splitting on
+  the delimiter you claim to have written and asserting three 32-character parts fails on it
+  immediately; an id-shaped regex would have "found" three ids in it. (All three malformed
+  prompts were caught at composition, but that is three hand-assembly errors in one run:
+  prefer building the list from the revset's output **file**, directly, over retyping or
+  reformatting it.)
 - You MUST perform the post-review checks in §Validation Posture before reading the verdict.
 - Route on `review.verdict`:
 
