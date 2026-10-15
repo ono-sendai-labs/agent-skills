@@ -18,7 +18,7 @@ Transcribe audio files to text using the Google Gemini API. The transcript is sa
 
 ## Available scripts
 
-- **`scripts/transcribe.py`** — Uploads an audio file to the Gemini Files API, transcribes it, and writes the transcript to a `.txt` file.
+- **`scripts/transcribe.py`** — Uploads an audio file to the Gemini Files API, transcribes it using the dedicated Gemini transcription API (`gemini-3.5-transcribe`), and writes the transcript to a `.txt` file.
 
 ## Workflow
 
@@ -26,13 +26,20 @@ Transcribe audio files to text using the Google Gemini API. The transcript is sa
 
 2. Run the transcription script:
    ```bash
-   uv run scripts/transcribe.py <audio-file> [--output <output.txt>]
+   uv run scripts/transcribe.py <audio-file> [options]
    ```
 
    Examples:
    ```bash
+   # Transcribe using the dedicated transcription API in smart mode (default)
    # Saves transcript to spoken-notes-transcript.txt next to the audio file
    uv run scripts/transcribe.py spoken-notes.m4a
+
+   # Transcribe verbatim (preserves exact filler words and repetitions)
+   uv run scripts/transcribe.py spoken-notes.m4a --mode verbatim
+
+   # Transcribe using regular Gemini Flash with the legacy prompt
+   uv run scripts/transcribe.py spoken-notes.m4a --flash
 
    # Save to an explicit output path
    uv run scripts/transcribe.py spoken-notes.m4a --output transcript.txt
@@ -41,7 +48,11 @@ Transcribe audio files to text using the Google Gemini API. The transcript is sa
    uv run scripts/transcribe.py spoken-notes.m4a --output -
    ```
 
-   Default output: `<audio-file-stem>-transcript.txt` in the same directory as the audio file.
+   Options:
+   - `--mode {smart,verbatim}`: Transcription mode for the dedicated API (default: `smart`). `smart` removes fillers and self-corrections while applying structured formatting; `verbatim` preserves word-for-word audio.
+   - `--flash`, `--legacy`: Fall back to regular Gemini Flash (`gemini-flash-latest`) using `models.generate_content` and prompt-based transcription.
+   - `--model MODEL`: Override the model (defaults to `gemini-3.5-transcribe`, or `gemini-flash-latest` with `--flash`).
+   - `--output OUTPUT`: Output file path (default: `<stem>-transcript.txt`), or `-` for stdout.
 
 3. Read the transcript file and use it as the basis for further work (drafting a document, summarizing, extracting action items, etc.).
 

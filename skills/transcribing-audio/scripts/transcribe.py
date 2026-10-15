@@ -2,7 +2,7 @@
 # /// script
 # requires-python = ">=3.9"
 # dependencies = [
-#   "google-genai>=0.8.0",
+#   "google-genai>=2.0.0",
 # ]
 # ///
 """Transcribe an audio file to text using the Google Gemini API."""
@@ -43,6 +43,8 @@ def main():
         epilog="""
 Examples:
   uv run scripts/transcribe.py spoken-notes.m4a
+  uv run scripts/transcribe.py spoken-notes.m4a --mode verbatim
+  uv run scripts/transcribe.py spoken-notes.m4a --flash
   uv run scripts/transcribe.py spoken-notes.m4a --output my-transcript.txt
   uv run scripts/transcribe.py spoken-notes.m4a --output -
 
@@ -62,9 +64,32 @@ Exit codes:
         ),
     )
     parser.add_argument(
+        "--mode",
+        choices=["smart", "verbatim"],
+        default="smart",
+        help=(
+            "Transcription mode for the dedicated transcription API: 'smart' removes "
+            "filler words/self-corrections and formats text; 'verbatim' preserves "
+            "word-for-word speech (default: smart)."
+        ),
+    )
+    parser.add_argument(
+        "--flash",
+        "--legacy",
+        dest="use_flash",
+        action="store_true",
+        help=(
+            "Use regular Gemini Flash (models.generate_content with prompt) "
+            "instead of the dedicated transcription API."
+        ),
+    )
+    parser.add_argument(
         "--model",
-        default="gemini-flash-latest",
-        help="Gemini model to use.",
+        default=None,
+        help=(
+            "Gemini model to use (default: gemini-3.5-transcribe, or "
+            "gemini-flash-latest when --flash/--legacy is set)."
+        ),
     )
     args = parser.parse_args()
 
@@ -89,6 +114,13 @@ Exit codes:
     else:
         output_file = audio_path.parent / f"{audio_path.stem}-transcript.txt"
 
+    if args.model:
+        model = args.model
+    elif args.use_flash:
+        model = "gemini-flash-latest"
+    else:
+        model = "gemini-3.5-transcribe"
+
     from google import genai
 
     client = genai.Client(api_key=api_key)
@@ -102,45 +134,65 @@ Exit codes:
 
     print("Transcribing...", file=sys.stderr)
     try:
-        response = client.models.generate_content(
-            model=args.model,
-            contents=[
-                (
-                    "Transcribe this audio recording. Output only the transcript text, "
-                    "with no commentary, headers, or timestamps unless they are part of "
-                    "the spoken content.\n"
-                    "\n"
-                    "Apply only light, mechanical cleanup as you transcribe:\n"
-                    "- Remove filler words and verbal tics (e.g. \"uhm\", \"uh\", \"like\", "
-                    "\"you know\") that carry no content.\n"
-                    "- If the speaker immediately restarts or self-corrects a word or "
-                    "phrase they just said (e.g. \"...the report is due Friday - oh no, "
-                    "I mean Monday\"), keep only the corrected version, as if they had "
-                    "said it right the first time.\n"
-                    "\n"
-                    "Do NOT do anything beyond that. In particular:\n"
-                    "- Do not reorder, restructure, or move text. If the speaker refers "
-                    "back to something they said earlier (e.g. \"I meant to say earlier "
-                    "that...\"), transcribe that reference in place, exactly where it "
-                    "occurs - do not go back and edit the earlier passage.\n"
-                    "- Do not paraphrase, summarize, or otherwise change the speaker's "
-                    "wording beyond removing fillers and immediate self-corrections as "
-                    "described above.\n"
-                    "\n"
-                    "Handle unclear audio inline, at the point it occurs, using these "
-                    "markers:\n"
-                    "- If a word or short phrase is inaudible or too garbled to guess, "
-                    "write: [...garbled]\n"
-                    "- If a word is unclear but you have multiple plausible guesses, "
-                    "write: [unclear: option one | option two]\n"
-                    "- If you can't confidently spell a word but can approximate its "
-                    "sound, write: [unclear; phonetic: pray-shus]\n"
-                    "Use whichever of these three forms is the best fit; do not guess "
-                    "silently and present it as certain."
-                ),
-                uploaded_file,
-            ],
-        )
+        if args.use_flash:
+            response = client.models.generate_content(
+                model=model,
+                contents=[
+                    (
+                        "Transcribe this audio recording. Output only the transcript text, "
+                        "with no commentary, headers, or timestamps unless they are part of "
+                        "the spoken content.\n"
+                        "\n"
+                        "Apply only light, mechanical cleanup as you transcribe:\n"
+                        "- Remove filler words and verbal tics (e.g. \"uhm\", \"uh\", \"like\", "
+                        "\"you know\") that carry no content.\n"
+                        "- If the speaker immediately restarts or self-corrects a word or "
+                        "phrase they just said (e.g. \"...the report is due Friday - oh no, "
+                        "I mean Monday\"), keep only the corrected version, as if they had "
+                        "said it right the first time.\n"
+                        "\n"
+                        "Do NOT do anything beyond that. In particular:\n"
+                        "- Do not reorder, restructure, or move text. If the speaker refers "
+                        "back to something they said earlier (e.g. \"I meant to say earlier "
+                        "that...\"), transcribe that reference in place, exactly where it "
+                        "occurs - do not go back and edit the earlier passage.\n"
+                        "- Do not paraphrase, summarize, or otherwise change the speaker's "
+                        "wording beyond removing fillers and immediate self-corrections as "
+                        "described above.\n"
+                        "\n"
+                        "Handle unclear audio inline, at the point it occurs, using these "
+                        "markers:\n"
+                        "- If a word or short phrase is inaudible or too garbled to guess, "
+                        "write: [...garbled]\n"
+                        "- If a word is unclear but you have multiple plausible guesses, "
+                        "write: [unclear: option one | option two]\n"
+                        "- If you can't confidently spell a word but can approximate its "
+                        "sound, write: [unclear; phonetic: pray-shus]\n"
+                        "Use whichever of these three forms is the best fit; do not guess "
+                        "silently and present it as certain."
+                    ),
+                    uploaded_file,
+                ],
+            )
+            transcript = response.text
+        else:
+            transcription_mode = "smart" if args.mode == "smart" else {"type": "verbatim"}
+            interaction = client.interactions.create(
+                model=model,
+                input=[
+                    {
+                        "type": "audio",
+                        "uri": uploaded_file.uri,
+                        "mime_type": uploaded_file.mime_type,
+                    }
+                ],
+                generation_config={
+                    "transcription_config": {
+                        "mode": transcription_mode,
+                    }
+                },
+            )
+            transcript = interaction.output_text
     except Exception as e:
         print(f"Error: Transcription failed: {e}", file=sys.stderr)
         sys.exit(2)
@@ -150,8 +202,6 @@ Exit codes:
             client.files.delete(name=uploaded_file.name)
         except Exception:
             pass
-
-    transcript = response.text
 
     if output_file is None:
         print(transcript)
